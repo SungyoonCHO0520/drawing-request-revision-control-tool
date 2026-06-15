@@ -1,0 +1,41 @@
+﻿# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+build/
+dist/
+*.spec
+
+# Temporary
+*.log
+*.tmp
+~$*.xlsx
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Confidential project data
+*.pfcproj
+*.pdf
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.sqlite
+*.sqlite3
+
+# Environment / secrets
+.env
+.env.*
+secrets/
+credentials/

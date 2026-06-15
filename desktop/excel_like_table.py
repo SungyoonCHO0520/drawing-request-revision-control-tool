@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtWidgets import QApplication, QComboBox, QStyledItemDelegate, QTableView
+
+from src.data_models import DROPDOWN_COLUMNS
+
+
+class ComboDelegate(QStyledItemDelegate):
+    def __init__(self, options: list[str], parent=None):
+        super().__init__(parent)
+        self.options = options
+
+    def createEditor(self, parent, option, index):
+        combo = QComboBox(parent)
+        combo.addItems([""] + self.options)
+        return combo
+
+    def setEditorData(self, editor, index):
+        value = str(index.model().data(index, Qt.EditRole) or "")
+        position = editor.findText(value)
+        editor.setCurrentIndex(max(position, 0))
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.currentText(), Qt.EditRole)
+
+
+class ExcelLikeTable(QTableView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setSortingEnabled(True)
+        self.setAlternatingRowColors(True)
+        self.setSelectionBehavior(QTableView.SelectItems)
+        self.setSelectionMode(QTableView.ExtendedSelection)
+        self.horizontalHeader().setStretchLastSection(False)
+        self.verticalHeader().setVisible(True)
+        self._install_actions()
+
+    def _install_actions(self) -> None:
+        copy_action = QAction("Copy", self)
+        copy_action.setShortcut(QKeySequence.Copy)
+        copy_action.triggered.connect(self.copy_selection)
+        self.addAction(copy_action)
+
+        paste_action = QAction("Paste", self)
+        paste_action.setShortcut(QKeySequence.Paste)
+        paste_action.triggered.connect(self.paste_selection)
+        self.addAction(paste_action)
+
+    def setModel(self, model) -> None:
+        super().setModel(model)
+        self.apply_delegates()
+        self.resizeColumnsToContents()
+
+    def apply_delegates(self) -> None:
+        model = self.model()
+        if model is None:
+            return
+        for col in range(model.columnCount()):
+            column_name = str(model.headerData(col, Qt.Horizontal, Qt.DisplayRole))
+            if column_name in DROPDOWN_COLUMNS:
+                self.setItemDelegateForColumn(col, ComboDelegate(DROPDOWN_COLUMNS[column_name], self))
+
+    def copy_selection(self) -> None:
+        indexes = self.selectedIndexes()
+        if not indexes:
+            return
+        rows = sorted(set(index.row() for index in indexes))
+        cols = sorted(set(index.column() for index in indexes))
+        model = self.model()
+        text_rows = []
+        for row in rows:
+            text_rows.append("\t".join(str(model.data(model.index(row, col), Qt.DisplayRole) or "") for col in cols))
+        QApplication.clipboard().setText("\n".join(text_rows))
+
+    def paste_selection(self) -> None:
+        model = self.model()
+        if model is None:
+            return
+        start = self.currentIndex()
+        if not start.isValid():
+            return
+        text = QApplication.clipboard().text()
+        for row_offset, line in enumerate(text.splitlines()):
+            for col_offset, value in enumerate(line.split("\t")):
+                row = start.row() + row_offset
+                col = start.column() + col_offset
+                if col < model.columnCount():
+                    model.set_value(row, col, value)
+
+    def selected_cell(self) -> tuple[int, int] | None:
+        current = self.currentIndex()
+        if current.isValid():
+            return current.row(), current.column()
+        indexes = self.selectedIndexes()
+        if indexes:
+            first = indexes[0]
+            return first.row(), first.column()
+        return None
+
+    def add_row(self) -> None:
+        if self.model():
+            self.model().add_row()
+
+    def insert_row_above(self) -> None:
+        if not self.model():
+            return
+        selected = self.selected_cell()
+        self.model().insert_row(0 if selected is None else selected[0])
+
+    def insert_row_below(self) -> None:
+        if not self.model():
+            return
+        selected = self.selected_cell()
+        self.model().insert_row(self.model().rowCount() if selected is None else selected[0] + 1)
+
+    def insert_column_left(self) -> None:
+        if not self.model():
+            return
+        selected = self.selected_cell()
+        self.model().insert_column(0 if selected is None else selected[1])
+        self.apply_delegates()
+
+    def insert_column_right(self) -> None:
+        if not self.model():
+            return
+        selected = self.selected_cell()
+        self.model().insert_column(self.model().columnCount() if selected is None else selected[1] + 1)
+        self.apply_delegates()
+
+    def current_row(self) -> int | None:
+        selected = self.selected_cell()
+        if selected is None:
+            return None
+        return selected[0]
+
+    def current_column(self) -> int | None:
+        selected = self.selected_cell()
+        if selected is None:
+            return None
+        return selected[1]
+
+    def delete_current_row(self) -> bool:
+        row = self.current_row()
+        if row is None or not self.model():
+            return False
+        self.model().delete_row(row)
+        return True
+
+    def current_column_name(self) -> str | None:
+        column = self.current_column()
+        if column is None or not self.model():
+            return None
+        return str(self.model().headerData(column, Qt.Horizontal, Qt.DisplayRole))
+
+    def delete_current_column(self) -> str | None:
+        column = self.current_column()
+        if column is None or not self.model():
+            return None
+        deleted = self.model().delete_column(column)
+        self.apply_delegates()
+        return deleted
