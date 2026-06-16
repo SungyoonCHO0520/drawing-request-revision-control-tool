@@ -7,6 +7,7 @@ from openpyxl import load_workbook
 from src.database import (
     add_project_record,
     create_project,
+    delete_project_record,
     initialize_database,
     list_module_display_names,
     list_projects,
@@ -53,6 +54,34 @@ def test_project_rename_persists_after_reopen(tmp_path):
     reloaded = list_projects(project)
 
     assert reloaded[0]["project_name"] == "Custom PFC Project"
+
+
+def test_delete_project_removes_project_metadata_and_rows(tmp_path):
+    project = tmp_path / "sample.pfcproj"
+    create_project(project, sample=True)
+    custom_id = add_project_record(project, "Delete Me")
+    custom_data = sample_project_data()
+    custom_data["drawing_request_summary"].loc[0, "Product"] = "Delete Product"
+    save_project(project, custom_data, custom_id)
+
+    delete_project_record(project, custom_id)
+
+    projects = list_projects(project)
+    deleted_data = load_project(project, custom_id)
+    with sqlite3.connect(project) as connection:
+        module_rows = connection.execute(
+            "SELECT COUNT(*) FROM module_display_names WHERE project_id = ?",
+            (str(custom_id),),
+        ).fetchone()[0]
+        data_rows = connection.execute(
+            'SELECT COUNT(*) FROM drawing_request_summary WHERE "_project_id" = ?',
+            (str(custom_id),),
+        ).fetchone()[0]
+
+    assert all(str(row["id"]) != str(custom_id) for row in projects)
+    assert module_rows == 0
+    assert data_rows == 0
+    assert deleted_data["drawing_request_summary"].empty
 
 
 def test_legacy_sample_without_project_info_gets_default_project(tmp_path):

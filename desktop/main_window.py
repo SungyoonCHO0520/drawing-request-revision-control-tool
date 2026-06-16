@@ -24,6 +24,7 @@ from src.data_models import DEFAULT_MODULE_DISPLAY_NAMES, DEFAULT_PROJECT_NAME, 
 from src.database import (
     add_project_record,
     create_project,
+    delete_project_record,
     list_module_display_names,
     list_projects,
     load_project,
@@ -122,9 +123,14 @@ class MainWindow(QMainWindow):
 
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
+        project_button_row = QHBoxLayout()
         add_project_button = QPushButton("Add Project")
         add_project_button.clicked.connect(self.add_project)
-        left_layout.addWidget(add_project_button)
+        delete_project_button = QPushButton("Delete Project")
+        delete_project_button.clicked.connect(self.delete_project)
+        project_button_row.addWidget(add_project_button)
+        project_button_row.addWidget(delete_project_button)
+        left_layout.addLayout(project_button_row)
         left_layout.addWidget(self.tree)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -359,6 +365,58 @@ class MainWindow(QMainWindow):
         self._refresh_tree()
         self._load_table("drawing_request_summary", sync=False)
         self.log_message(f"Added project: {name}")
+
+    def delete_project(self) -> None:
+        if self.project_path is None:
+            QMessageBox.information(self, "Delete Project", "프로젝트를 삭제하려면 먼저 .pfcproj 파일을 저장하거나 열어주세요.")
+            return
+        project_id = self.tree.selected_project_id()
+        if not project_id:
+            QMessageBox.information(self, "Delete Project", "삭제할 프로젝트를 먼저 선택하세요.")
+            return
+        if len(self.projects) <= 1:
+            QMessageBox.information(self, "Delete Project", "마지막 남은 프로젝트는 삭제할 수 없습니다.")
+            return
+        project_name = self.current_project_name(str(project_id))
+        reply = QMessageBox.question(
+            self,
+            "Delete Project",
+            f"'{project_name}' 프로젝트와 해당 프로젝트의 모든 Table 데이터를 삭제할까요?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self._sync_current_model()
+        for cached_project_id, dataframes in list(self.project_dataframes.items()):
+            if str(cached_project_id) != str(project_id):
+                save_project(
+                    self.project_path,
+                    self._apply_current_project_name_to_summary(dataframes, str(cached_project_id)),
+                    cached_project_id,
+                )
+        delete_project_record(self.project_path, project_id)
+        deleted_current_project = str(project_id) == str(self.current_project_id)
+        self.project_dataframes.pop(str(project_id), None)
+        self.module_names_by_project.pop(str(project_id), None)
+        self.projects = list_projects(self.project_path)
+        self.module_names_by_project = {
+            str(project["id"]): list_module_display_names(self.project_path, project["id"])
+            for project in self.projects
+        }
+        if deleted_current_project:
+            self.current_project_id = str(self.projects[0]["id"])
+            self.dataframes = load_project(self.project_path, self.current_project_id)
+            self.project_dataframes[self.current_project_id] = self.dataframes
+        else:
+            self.dataframes = self.project_dataframes.get(
+                str(self.current_project_id),
+                load_project(self.project_path, self.current_project_id),
+            )
+            self.project_dataframes[str(self.current_project_id)] = self.dataframes
+        self._refresh_tree()
+        self._load_table("drawing_request_summary", sync=False)
+        self.log_message(f"Deleted project: {project_name}")
 
     def rename_tree_item(self, item) -> None:
         item_type = item.data(0, Qt.UserRole + 3)

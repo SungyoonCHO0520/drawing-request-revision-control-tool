@@ -209,6 +209,24 @@ def rename_project(project_path: str | Path, project_id: str | int, new_name: st
         connection.commit()
 
 
+def delete_project_record(project_path: str | Path, project_id: str | int) -> None:
+    initialize_database(project_path)
+    project_id = str(project_id)
+    with connect(project_path) as connection:
+        project_count = connection.execute("SELECT COUNT(*) AS count FROM projects").fetchone()["count"]
+        if project_count <= 1:
+            raise ValueError("Cannot delete the last project.")
+        for table_name in TABLE_SCHEMAS:
+            ensure_data_table(connection, table_name)
+            connection.execute(
+                f"DELETE FROM {quote_identifier(table_name)} WHERE {quote_identifier(PROJECT_ID_COLUMN)} = ?",
+                (project_id,),
+            )
+        connection.execute("DELETE FROM module_display_names WHERE project_id = ?", (project_id,))
+        connection.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        connection.commit()
+
+
 def list_module_display_names(project_path: str | Path, project_id: str | int) -> dict[str, str]:
     initialize_database(project_path)
     with connect(project_path) as connection:
