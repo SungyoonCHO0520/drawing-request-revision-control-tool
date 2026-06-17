@@ -6,6 +6,7 @@ import pandas as pd
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import (
+    QColorDialog,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -27,9 +28,11 @@ from src.database import (
     delete_project_record,
     list_module_display_names,
     list_projects,
+    load_cell_styles,
     load_project,
     rename_module_display,
     rename_project,
+    save_cell_styles,
     save_project,
 )
 from src.excel_exporter import export_dataframes_to_excel
@@ -57,6 +60,7 @@ class MainWindow(QMainWindow):
         self.current_project_id = "1"
         self.dataframes = normalize_all(sample_project_data())
         self.project_dataframes = {"1": self.dataframes}
+        self.project_cell_styles: dict[str, dict[str, dict[tuple[int, str], str]]] = {"1": {}}
         self.current_table = "drawing_request_summary"
         self._build_ui()
         self._place_window_on_screen()
@@ -111,12 +115,18 @@ class MainWindow(QMainWindow):
         delete_button.clicked.connect(self.delete_current_row)
         delete_column_button = QPushButton("Delete Column")
         delete_column_button.clicked.connect(self.delete_current_column)
+        cell_color_button = QPushButton("Cell Color")
+        cell_color_button.clicked.connect(self.set_selected_cell_color)
+        clear_color_button = QPushButton("Clear Color")
+        clear_color_button.clicked.connect(self.clear_selected_cell_color)
         button_row.addWidget(add_row_above_button)
         button_row.addWidget(add_row_below_button)
         button_row.addWidget(add_column_left_button)
         button_row.addWidget(add_column_right_button)
         button_row.addWidget(delete_button)
         button_row.addWidget(delete_column_button)
+        button_row.addWidget(cell_color_button)
+        button_row.addWidget(clear_color_button)
         button_row.addStretch()
         center_layout.addLayout(button_row)
         center_layout.addWidget(self.table)
@@ -180,13 +190,15 @@ class MainWindow(QMainWindow):
         model = self.table.model()
         if model is not None:
             self.dataframes[self.current_table] = normalize_dataframe(model.dataframe(), self.current_table)
+            self.project_cell_styles.setdefault(str(self.current_project_id), {})[self.current_table] = model.cell_colors()
             self.project_dataframes[str(self.current_project_id)] = self.dataframes
 
     def _load_table(self, table_name: str, sync: bool = True) -> None:
         if sync:
             self._sync_current_model()
         self.current_table = table_name
-        self.table.setModel(PandasTableModel(self.dataframes[table_name]))
+        table_styles = self.project_cell_styles.setdefault(str(self.current_project_id), {}).get(table_name, {})
+        self.table.setModel(PandasTableModel(self.dataframes[table_name], table_styles))
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
         self.statusBar().showMessage(
             f"Project: {self.current_project_name()} / Loaded {MODULE_LABELS.get(table_name, table_name)}"
@@ -217,8 +229,10 @@ class MainWindow(QMainWindow):
         if project_id not in self.project_dataframes:
             if self.project_path is not None:
                 self.project_dataframes[project_id] = load_project(self.project_path, project_id)
+                self.project_cell_styles[project_id] = load_cell_styles(self.project_path, project_id)
             else:
                 self.project_dataframes[project_id] = self._blank_project_data()
+                self.project_cell_styles[project_id] = {}
         self.dataframes = self.project_dataframes[project_id]
 
     def current_project_name(self, project_id: str | None = None) -> str:
@@ -308,6 +322,7 @@ class MainWindow(QMainWindow):
         self.current_project_id = "1"
         self.dataframes = self._blank_project_data()
         self.project_dataframes = {"1": self.dataframes}
+        self.project_cell_styles = {"1": {}}
         self.project_path = None
         self._refresh_tree()
         self._load_table("drawing_request_summary", sync=False)
@@ -326,6 +341,7 @@ class MainWindow(QMainWindow):
         }
         self.dataframes = load_project(path, self.current_project_id)
         self.project_dataframes = {self.current_project_id: self.dataframes}
+        self.project_cell_styles = {self.current_project_id: load_cell_styles(path, self.current_project_id)}
         self._refresh_tree()
         self._load_table("drawing_request_summary", sync=False)
         self.log_message(f"Opened project: {path}")
@@ -346,6 +362,7 @@ class MainWindow(QMainWindow):
             }
         for project_id, dataframes in self.project_dataframes.items():
             save_project(self.project_path, self._apply_current_project_name_to_summary(dataframes, project_id), project_id)
+            save_cell_styles(self.project_path, self.project_cell_styles.get(str(project_id), {}), project_id)
         self.log_message(f"Saved project: {self.project_path}")
 
     def add_project(self) -> None:
@@ -360,6 +377,7 @@ class MainWindow(QMainWindow):
         self.projects = list_projects(self.project_path)
         self.module_names_by_project[str(project_id)] = list_module_display_names(self.project_path, project_id)
         self.project_dataframes[str(project_id)] = self._blank_project_data()
+        self.project_cell_styles[str(project_id)] = {}
         save_project(self.project_path, self.project_dataframes[str(project_id)], project_id)
         self._load_project_data(str(project_id))
         self._refresh_tree()
@@ -399,6 +417,7 @@ class MainWindow(QMainWindow):
         deleted_current_project = str(project_id) == str(self.current_project_id)
         self.project_dataframes.pop(str(project_id), None)
         self.module_names_by_project.pop(str(project_id), None)
+        self.project_cell_styles.pop(str(project_id), None)
         self.projects = list_projects(self.project_path)
         self.module_names_by_project = {
             str(project["id"]): list_module_display_names(self.project_path, project["id"])
@@ -407,6 +426,7 @@ class MainWindow(QMainWindow):
         if deleted_current_project:
             self.current_project_id = str(self.projects[0]["id"])
             self.dataframes = load_project(self.project_path, self.current_project_id)
+            self.project_cell_styles[self.current_project_id] = load_cell_styles(self.project_path, self.current_project_id)
             self.project_dataframes[self.current_project_id] = self.dataframes
         else:
             self.dataframes = self.project_dataframes.get(
@@ -414,9 +434,40 @@ class MainWindow(QMainWindow):
                 load_project(self.project_path, self.current_project_id),
             )
             self.project_dataframes[str(self.current_project_id)] = self.dataframes
+            self.project_cell_styles.setdefault(
+                str(self.current_project_id),
+                load_cell_styles(self.project_path, self.current_project_id),
+            )
         self._refresh_tree()
         self._load_table("drawing_request_summary", sync=False)
         self.log_message(f"Deleted project: {project_name}")
+
+    def set_selected_cell_color(self) -> None:
+        indexes = self.table.selectedIndexes()
+        if not indexes:
+            QMessageBox.information(self, "Cell Color", "색상을 적용할 셀을 먼저 선택하세요.")
+            return
+        color = QColorDialog.getColor(parent=self, title="Select Cell Color")
+        if not color.isValid():
+            return
+        model = self.table.model()
+        if model is None:
+            return
+        model.set_cell_color(indexes, color.name().upper())
+        self.project_cell_styles.setdefault(str(self.current_project_id), {})[self.current_table] = model.cell_colors()
+        self.log_message(f"Applied cell color {color.name().upper()} to {len(indexes)} selected cell(s).")
+
+    def clear_selected_cell_color(self) -> None:
+        indexes = self.table.selectedIndexes()
+        if not indexes:
+            QMessageBox.information(self, "Clear Color", "색상을 지울 셀을 먼저 선택하세요.")
+            return
+        model = self.table.model()
+        if model is None:
+            return
+        model.clear_cell_color(indexes)
+        self.project_cell_styles.setdefault(str(self.current_project_id), {})[self.current_table] = model.cell_colors()
+        self.log_message(f"Cleared cell color from {len(indexes)} selected cell(s).")
 
     def rename_tree_item(self, item) -> None:
         item_type = item.data(0, Qt.UserRole + 3)

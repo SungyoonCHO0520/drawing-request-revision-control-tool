@@ -71,6 +71,20 @@ def ensure_project_tables(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cell_styles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT,
+            table_name TEXT,
+            row_index INTEGER,
+            column_name TEXT,
+            background_color TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
     connection.commit()
 
 
@@ -223,7 +237,62 @@ def delete_project_record(project_path: str | Path, project_id: str | int) -> No
                 (project_id,),
             )
         connection.execute("DELETE FROM module_display_names WHERE project_id = ?", (project_id,))
+        connection.execute("DELETE FROM cell_styles WHERE project_id = ?", (project_id,))
         connection.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        connection.commit()
+
+
+def load_cell_styles(project_path: str | Path, project_id: str | int) -> dict[str, dict[tuple[int, str], str]]:
+    initialize_database(project_path)
+    with connect(project_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT table_name, row_index, column_name, background_color
+            FROM cell_styles
+            WHERE project_id = ?
+            """,
+            (str(project_id),),
+        ).fetchall()
+        styles: dict[str, dict[tuple[int, str], str]] = {}
+        for row in rows:
+            table_styles = styles.setdefault(str(row["table_name"]), {})
+            table_styles[(int(row["row_index"]), str(row["column_name"]))] = str(row["background_color"])
+        return styles
+
+
+def save_cell_styles(
+    project_path: str | Path,
+    styles_by_table: dict[str, dict[tuple[int, str], str]],
+    project_id: str | int,
+) -> None:
+    initialize_database(project_path)
+    now = today_text()
+    with connect(project_path) as connection:
+        connection.execute("DELETE FROM cell_styles WHERE project_id = ?", (str(project_id),))
+        rows = []
+        for table_name, table_styles in styles_by_table.items():
+            for (row_index, column_name), background_color in table_styles.items():
+                if background_color:
+                    rows.append(
+                        (
+                            str(project_id),
+                            str(table_name),
+                            int(row_index),
+                            str(column_name),
+                            str(background_color),
+                            now,
+                            now,
+                        )
+                    )
+        if rows:
+            connection.executemany(
+                """
+                INSERT INTO cell_styles
+                (project_id, table_name, row_index, column_name, background_color, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
         connection.commit()
 
 

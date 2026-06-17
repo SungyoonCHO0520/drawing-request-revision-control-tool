@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+from PySide6.QtCore import Qt
 
 from desktop.table_model import PandasTableModel
 
@@ -41,3 +42,22 @@ def test_delete_column_removes_only_target_column():
 
     assert deleted == "B"
     assert model.dataframe().columns.tolist() == ["A", "C"]
+
+
+def test_cell_color_can_be_applied_shifted_and_cleared():
+    model = PandasTableModel(pd.DataFrame([{"A": "top"}, {"A": "bottom"}]))
+    first_cell = model.index(0, 0)
+
+    model.set_cell_color([first_cell], "#FFFF00")
+
+    assert model.cell_colors() == {(0, "A"): "#FFFF00"}
+    assert model.data(first_cell, Qt.BackgroundRole).name().upper() == "#FFFF00"
+
+    model.insert_row(0)
+
+    assert model.cell_colors() == {(1, "A"): "#FFFF00"}
+
+    shifted_cell = model.index(1, 0)
+    model.clear_cell_color([shifted_cell])
+
+    assert model.cell_colors() == {}

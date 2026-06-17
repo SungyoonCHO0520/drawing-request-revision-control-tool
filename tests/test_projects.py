@@ -9,11 +9,13 @@ from src.database import (
     create_project,
     delete_project_record,
     initialize_database,
+    load_cell_styles,
     list_module_display_names,
     list_projects,
     load_project,
     rename_module_display,
     rename_project,
+    save_cell_styles,
     save_project,
 )
 from src.data_models import DEFAULT_PROJECT_NAME, TABLE_SCHEMAS
@@ -63,6 +65,7 @@ def test_delete_project_removes_project_metadata_and_rows(tmp_path):
     custom_data = sample_project_data()
     custom_data["drawing_request_summary"].loc[0, "Product"] = "Delete Product"
     save_project(project, custom_data, custom_id)
+    save_cell_styles(project, {"drawing_request_summary": {(0, "Product"): "#FFFF00"}}, custom_id)
 
     delete_project_record(project, custom_id)
 
@@ -77,11 +80,37 @@ def test_delete_project_removes_project_metadata_and_rows(tmp_path):
             'SELECT COUNT(*) FROM drawing_request_summary WHERE "_project_id" = ?',
             (str(custom_id),),
         ).fetchone()[0]
+        style_rows = connection.execute(
+            "SELECT COUNT(*) FROM cell_styles WHERE project_id = ?",
+            (str(custom_id),),
+        ).fetchone()[0]
 
     assert all(str(row["id"]) != str(custom_id) for row in projects)
     assert module_rows == 0
     assert data_rows == 0
+    assert style_rows == 0
     assert deleted_data["drawing_request_summary"].empty
+
+
+def test_cell_styles_save_and_load(tmp_path):
+    project = tmp_path / "sample.pfcproj"
+    create_project(project)
+    project_id = list_projects(project)[0]["id"]
+
+    save_cell_styles(
+        project,
+        {
+            "drawing_request_summary": {
+                (0, "Project"): "#FFFF00",
+                (1, "Product"): "#DDEEFF",
+            }
+        },
+        project_id,
+    )
+    loaded = load_cell_styles(project, project_id)
+
+    assert loaded["drawing_request_summary"][(0, "Project")] == "#FFFF00"
+    assert loaded["drawing_request_summary"][(1, "Product")] == "#DDEEFF"
 
 
 def test_legacy_sample_without_project_info_gets_default_project(tmp_path):
