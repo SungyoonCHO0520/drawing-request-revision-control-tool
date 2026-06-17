@@ -40,7 +40,7 @@ from src.excel_importer import import_excel_to_dataframes
 from src.impact_rules import generate_inspection_revision_impact, generate_revision_impact, match_impact_rule
 from src.inspection_pdf_parser import parse_inspection_pdf
 from src.measurement_checker import check_measurement_results
-from src.sample_data import sample_project_data
+from src.module_guidance import module_guidance
 from src.validators import generate_review_checklist, validate_project
 from .excel_like_table import ExcelLikeTable
 from .impact_panel import ImpactPanel
@@ -58,7 +58,7 @@ class MainWindow(QMainWindow):
         self.projects = [{"id": "1", "project_name": DEFAULT_PROJECT_NAME}]
         self.module_names_by_project = {"1": DEFAULT_MODULE_DISPLAY_NAMES.copy()}
         self.current_project_id = "1"
-        self.dataframes = normalize_all(sample_project_data())
+        self.dataframes = self._blank_project_data()
         self.project_dataframes = {"1": self.dataframes}
         self.project_cell_styles: dict[str, dict[str, dict[tuple[int, str], str]]] = {"1": {}}
         self.current_table = "drawing_request_summary"
@@ -93,11 +93,13 @@ class MainWindow(QMainWindow):
 
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
-        right_layout.addWidget(QLabel("선택 행 상세 / Impact"))
+        right_layout.addWidget(QLabel("선택 행 상세"))
         self.detail = QTextEdit()
         self.detail.setReadOnly(True)
+        self.detail.setPlaceholderText("선택한 행의 상세 내용이 표시됩니다.")
         self.impact_panel = ImpactPanel()
         right_layout.addWidget(self.detail, 1)
+        right_layout.addWidget(QLabel("입력 예시 / 작성 요령"))
         right_layout.addWidget(self.impact_panel, 1)
 
         center_widget = QWidget()
@@ -200,6 +202,8 @@ class MainWindow(QMainWindow):
         table_styles = self.project_cell_styles.setdefault(str(self.current_project_id), {}).get(table_name, {})
         self.table.setModel(PandasTableModel(self.dataframes[table_name], table_styles))
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
+        self.detail.clear()
+        self._show_module_guidance()
         self.statusBar().showMessage(
             f"Project: {self.current_project_name()} / Loaded {MODULE_LABELS.get(table_name, table_name)}"
         )
@@ -272,9 +276,18 @@ class MainWindow(QMainWindow):
         record = df.iloc[row].to_dict()
         self.detail.setPlainText("\n".join(f"{key}: {value}" for key, value in record.items()))
         rule = match_impact_rule(str(record.get("Item", record.get("Part Name", ""))), str(record.get("Symbol", "")))
-        self.impact_panel.show_text(
-            f"Impact Area: {rule.impact_area}\nRequired Check: {rule.required_check}\nAlarm Level: {rule.alarm_level}"
+        self._show_module_guidance(
+            f"[선택 행 Impact]\n"
+            f"- Impact Area: {rule.impact_area}\n"
+            f"- Required Check: {rule.required_check}\n"
+            f"- Alarm Level: {rule.alarm_level}"
         )
+
+    def _show_module_guidance(self, extra_text: str = "") -> None:
+        text = module_guidance(self.current_table)
+        if extra_text:
+            text = f"{text}\n\n{extra_text}"
+        self.impact_panel.show_text(text)
 
     def log_message(self, message: str) -> None:
         self.log.append(message)

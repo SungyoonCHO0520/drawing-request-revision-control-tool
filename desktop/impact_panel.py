@@ -7,7 +7,7 @@ class ImpactPanel(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        self.setPlaceholderText("선택 행의 Impact Rule과 Revision 영향 알람이 표시됩니다.")
+        self.setPlaceholderText("선택한 Module의 입력 예시와 작성 요령이 표시됩니다.")
 
     def show_text(self, text: str) -> None:
         self.setPlainText(text)
