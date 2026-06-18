@@ -154,14 +154,17 @@ class SyncService:
         if tested.returncode != 0:
             return SyncResult(False, "테스트가 실패하여 Commit과 Push를 중단했습니다.", [tested.stdout[-3000:], tested.stderr[-1000:]])
         changed_paths = self.git.changed_paths()
-        sensitive = find_sensitive_paths(changed_paths)
+        sensitive = find_sensitive_paths(self.git.changed_paths(include_rename_sources=True))
         if sensitive:
             return SyncResult(False, "민감자료가 감지되어 Commit을 중단했습니다.", sensitive)
         if not changed_paths:
             return SyncResult(True, "Commit할 변경사항이 없습니다.", branch=branch, commit_id=self.git.rev_parse("HEAD"))
         staged = self.git.stage_paths(changed_paths)
         if staged.returncode != 0:
-            return SyncResult(False, "변경파일 Stage에 실패했습니다.", [staged.stderr.strip()])
+            details = [f"Stage 대상 파일: {path}" for path in changed_paths]
+            if staged.stderr.strip():
+                details.append(f"Git 오류: {staged.stderr.strip()}")
+            return SyncResult(False, "변경파일 Stage에 실패했습니다.", details)
         staged_sensitive = find_sensitive_paths(self.git.staged_paths())
         if staged_sensitive:
             return SyncResult(False, "Stage에서 민감자료가 감지되어 Commit을 중단했습니다.", staged_sensitive)

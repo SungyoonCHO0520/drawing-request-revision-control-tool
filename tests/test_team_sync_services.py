@@ -44,7 +44,7 @@ class FakeGit:
     def status_porcelain(self):
         return [" M src/example.py"] if self.dirty else []
 
-    def changed_paths(self):
+    def changed_paths(self, include_rename_sources=False):
         return list(self.changed)
 
     def rev_parse(self, ref="HEAD"):
@@ -220,6 +220,18 @@ def test_sensitive_file_stops_upload(tmp_path):
     assert result.success is False
     assert "customer_drawing.pdf" in " ".join(result.details)
     assert git.push_calls == []
+
+
+def test_stage_failure_lists_exact_problem_paths(tmp_path):
+    git = FakeGit()
+    git.changed = ["한글 폴더/작업 파일 (최종).py"]
+    git.stage_paths = Mock(return_value=completed(returncode=1, stderr="stage failed"))
+
+    result = service(tmp_path, git).upload_my_work("test commit")
+
+    assert result.success is False
+    assert "Stage 대상 파일: 한글 폴더/작업 파일 (최종).py" in result.details
+    assert "Git 오류: stage failed" in result.details
 
 
 def test_merge_conflict_stops_main_integration(tmp_path):

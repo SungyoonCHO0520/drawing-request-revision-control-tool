@@ -3,8 +3,16 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
+
+
+@dataclass(frozen=True)
+class GitStatusEntry:
+    status: str
+    path: str
+    original_path: str | None = None
 
 
 class GitService:
@@ -15,14 +23,21 @@ class GitService:
     def command_available(self, command: str) -> bool:
         return shutil.which(command) is not None
 
-    def run(self, args: Sequence[str], check: bool = False) -> subprocess.CompletedProcess:
+    def run(
+        self,
+        args: Sequence[str],
+        check: bool = False,
+        input_text: str | None = None,
+    ) -> subprocess.CompletedProcess:
         result = self.runner(
             list(args),
             cwd=self.project_root,
+            input=input_text,
             text=True,
             encoding="utf-8",
             errors="replace",
             capture_output=True,
+            shell=False,
         )
         if check and result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Command failed")
@@ -38,20 +53,47 @@ class GitService:
         result = self.git("branch", "--show-current")
         return result.stdout.strip() if result.returncode == 0 else ""
 
-    def status_porcelain(self) -> list[str]:
-        result = self.git("status", "--porcelain")
+    @staticmethod
+    def _parse_porcelain_v1_z(output: str) -> list[GitStatusEntry]:
+        fields = output.split("\0")
+        entries: list[GitStatusEntry] = []
+        index = 0
+        while index < len(fields):
+            record = fields[index]
+            index += 1
+            if not record:
+                continue
+            if len(record) < 4 or record[2] != " ":
+                continue
+            status = record[:2]
+            path = record[3:]
+            original_path = None
+            if "R" in status or "C" in status:
+                if index < len(fields) and fields[index]:
+                    original_path = fields[index]
+                    index += 1
+            entries.append(GitStatusEntry(status, path, original_path))
+        return entries
+
+    @staticmethod
+    def _parse_nul_paths(output: str) -> list[str]:
+        return [path for path in output.split("\0") if path]
+
+    def status_porcelain(self) -> list[GitStatusEntry]:
+        result = self.git("status", "--porcelain=v1", "-z", "--untracked-files=all")
         if result.returncode != 0:
             return []
-        return [line for line in result.stdout.splitlines() if line.strip()]
+        return self._parse_porcelain_v1_z(result.stdout)
 
-    def changed_paths(self) -> list[str]:
+    def changed_paths(self, include_rename_sources: bool = False) -> list[str]:
         paths: list[str] = []
-        for line in self.status_porcelain():
-            value = line[3:] if len(line) > 3 else ""
-            if " -> " in value:
-                value = value.split(" -> ", 1)[1]
-            if value:
-                paths.append(value.strip().strip('"'))
+        seen: set[str] = set()
+        for entry in self.status_porcelain():
+            candidates = (entry.path, entry.original_path) if include_rename_sources else (entry.path,)
+            for path in candidates:
+                if path is not None and path not in seen:
+                    seen.add(path)
+                    paths.append(path)
         return paths
 
     def has_local_changes(self) -> bool:
@@ -97,15 +139,19 @@ class GitService:
         return self.git("merge", "--no-edit", ref)
 
     def conflict_files(self) -> list[str]:
-        result = self.git("diff", "--name-only", "--diff-filter=U")
-        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        result = self.git("diff", "--name-only", "--diff-filter=U", "-z")
+        return self._parse_nul_paths(result.stdout) if result.returncode == 0 else []
 
     def stage_paths(self, paths: list[str]) -> subprocess.CompletedProcess:
-        return self.git("add", "--", *paths)
+        pathspecs = "\0".join(paths) + "\0"
+        return self.run(
+            ["git", "add", "--all", "--pathspec-from-file=-", "--pathspec-file-nul"],
+            input_text=pathspecs,
+        )
 
     def staged_paths(self) -> list[str]:
-        result = self.git("diff", "--cached", "--name-only")
-        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        result = self.git("diff", "--cached", "--name-only", "-z")
+        return self._parse_nul_paths(result.stdout) if result.returncode == 0 else []
 
     def commit(self, message: str) -> subprocess.CompletedProcess:
         return self.git("commit", "-m", message)
@@ -131,5 +177,5 @@ class GitService:
         return self.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
 
     def changed_files_between(self, old_ref: str, new_ref: str) -> list[str]:
-        result = self.git("diff", "--name-only", old_ref, new_ref)
-        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        result = self.git("diff", "--name-only", "-z", old_ref, new_ref)
+        return self._parse_nul_paths(result.stdout) if result.returncode == 0 else []

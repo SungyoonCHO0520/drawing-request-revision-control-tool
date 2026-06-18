@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
 
 
@@ -18,20 +19,20 @@ SENSITIVE_PARTS = {".venv", "venv", "secrets", "credentials", "company_data", "c
 
 
 def normalize_git_path(path: str) -> str:
-    return path.strip().strip('"').replace("\\", "/")
+    return path
 
 
 def is_sensitive_path(path: str) -> bool:
-    normalized = normalize_git_path(path)
-    pure = PurePosixPath(normalized.lower())
-    name = pure.name
-    if pure.suffix in SENSITIVE_EXTENSIONS:
+    parts = [part for part in re.split(r"[\\/]", path.casefold()) if part]
+    if not parts:
+        return False
+    name = parts[-1]
+    if PurePosixPath(name).suffix in SENSITIVE_EXTENSIONS:
         return True
     if name == ".env" or name.startswith(".env."):
         return True
-    return any(part in SENSITIVE_PARTS for part in pure.parts)
+    return any(part in SENSITIVE_PARTS for part in parts)
 
 
 def find_sensitive_paths(paths: list[str]) -> list[str]:
-    return sorted({normalize_git_path(path) for path in paths if is_sensitive_path(path)})
-
+    return sorted({path for path in paths if is_sensitive_path(path)})
