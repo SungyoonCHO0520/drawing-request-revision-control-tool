@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSplitter,
+    QTabWidget,
     QTextEdit,
     QToolBar,
     QVBoxLayout,
@@ -67,6 +69,7 @@ class MainWindow(QMainWindow):
         self.project_dataframes = {"1": self.dataframes}
         self.project_cell_styles: dict[str, dict[str, dict[tuple[int, str], str]]] = {"1": {}}
         self.project_column_display_names: dict[str, dict[str, dict[str, str]]] = {"1": {}}
+        self.cell_edit_records: list[dict[str, str]] = []
         self.current_table = "drawing_request_summary"
         self._build_ui()
         self._place_window_on_screen()
@@ -106,9 +109,18 @@ class MainWindow(QMainWindow):
         self.detail.setReadOnly(True)
         self.detail.setPlaceholderText("선택한 행의 상세 내용이 표시됩니다.")
         self.impact_panel = ImpactPanel()
+        self.cell_edit_info = QTextEdit()
+        self.cell_edit_info.setReadOnly(True)
+        self.cell_edit_info.setPlaceholderText(
+            "셀을 입력하거나 수정하면 입력 내용과 날짜·시간이 여기에 표시됩니다."
+        )
+        self.right_info_tabs = QTabWidget()
+        self.right_info_tabs.addTab(self.cell_edit_info, "셀 입력 정보")
+        self.right_info_tabs.addTab(self.impact_panel, "입력 예시")
         right_layout.addWidget(self.detail, 1)
         right_layout.addWidget(QLabel("입력 예시 / 작성 요령"))
-        right_layout.addWidget(self.impact_panel, 1)
+        right_layout.itemAt(2).widget().setText("셀 편집 정보")
+        right_layout.addWidget(self.right_info_tabs, 1)
 
         center_widget = QWidget()
         center_layout = QVBoxLayout(center_widget)
@@ -256,7 +268,9 @@ class MainWindow(QMainWindow):
         self.current_table = table_name
         table_styles = self.project_cell_styles.setdefault(str(self.current_project_id), {}).get(table_name, {})
         header_names = self.project_column_display_names.setdefault(str(self.current_project_id), {}).get(table_name, {})
-        self.table.setModel(PandasTableModel(self.dataframes[table_name], table_styles, header_names))
+        model = PandasTableModel(self.dataframes[table_name], table_styles, header_names)
+        model.cellEdited.connect(self._cell_edited)
+        self.table.setModel(model)
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
         self.detail.clear()
         self._show_module_guidance()
@@ -346,6 +360,43 @@ class MainWindow(QMainWindow):
         if extra_text:
             text = f"{text}\n\n{extra_text}"
         self.impact_panel.show_text(text)
+
+    def _cell_edited(self, row: int, column_name: str, previous: str, updated: str) -> None:
+        model = self.table.model()
+        display_name = column_name
+        if model is not None:
+            for column in range(model.columnCount()):
+                if model.internal_column_name(column) == column_name:
+                    display_name = str(model.headerData(column, Qt.Horizontal, Qt.DisplayRole))
+                    break
+        self.cell_edit_records.insert(
+            0,
+            {
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "project": self.current_project_name(),
+                "module": MODULE_LABELS.get(self.current_table, self.current_table),
+                "row": str(row + 1),
+                "column": display_name,
+                "internal_column": column_name,
+                "previous": previous,
+                "updated": updated,
+            },
+        )
+        self.cell_edit_records = self.cell_edit_records[:100]
+        blocks = []
+        for item in self.cell_edit_records:
+            column_text = item["column"]
+            if item["column"] != item["internal_column"]:
+                column_text += f" ({item['internal_column']})"
+            blocks.append(
+                f"[{item['time']}] {item['module']}\n"
+                f"프로젝트: {item['project']}\n"
+                f"위치: {item['row']}행 / {column_text}\n"
+                f"이전 값: {item['previous'] or '(빈 값)'}\n"
+                f"입력 값: {item['updated'] or '(빈 값)'}"
+            )
+        self.cell_edit_info.setPlainText("\n\n".join(blocks))
+        self.right_info_tabs.setCurrentWidget(self.cell_edit_info)
 
     def log_message(self, message: str) -> None:
         self.log.append(message)
