@@ -61,3 +61,32 @@ def test_cell_color_can_be_applied_shifted_and_cleared():
     model.clear_cell_color([shifted_cell])
 
     assert model.cell_colors() == {}
+
+
+def test_column_header_can_be_renamed_without_changing_internal_column():
+    model = PandasTableModel(pd.DataFrame([{"Customer Spec": "ES/MS"}]))
+
+    previous, renamed = model.rename_header(0, "고객 사양")
+
+    assert previous == "Customer Spec"
+    assert renamed == "고객 사양"
+    assert model.headerData(0, Qt.Horizontal, Qt.DisplayRole) == "고객 사양"
+    assert model.internal_column_name(0) == "Customer Spec"
+    assert model.dataframe().columns.tolist() == ["Customer Spec"]
+    assert model.header_display_names() == {"Customer Spec": "고객 사양"}
+
+
+def test_duplicate_or_blank_column_header_is_rejected():
+    model = PandasTableModel(pd.DataFrame([{"A": "1", "B": "2"}]))
+
+    try:
+        model.rename_header(0, "B")
+        assert False, "Duplicate header should fail"
+    except ValueError:
+        pass
+
+    try:
+        model.rename_header(0, "  ")
+        assert False, "Blank header should fail"
+    except ValueError:
+        pass

@@ -29,10 +29,12 @@ from src.database import (
     list_module_display_names,
     list_projects,
     load_cell_styles,
+    load_column_display_names,
     load_project,
     rename_module_display,
     rename_project,
     save_cell_styles,
+    save_column_display_names,
     save_project,
 )
 from src.excel_exporter import export_dataframes_to_excel
@@ -64,6 +66,7 @@ class MainWindow(QMainWindow):
         self.dataframes = self._blank_project_data()
         self.project_dataframes = {"1": self.dataframes}
         self.project_cell_styles: dict[str, dict[str, dict[tuple[int, str], str]]] = {"1": {}}
+        self.project_column_display_names: dict[str, dict[str, dict[str, str]]] = {"1": {}}
         self.current_table = "drawing_request_summary"
         self._build_ui()
         self._place_window_on_screen()
@@ -122,6 +125,8 @@ class MainWindow(QMainWindow):
         delete_button.clicked.connect(self.delete_current_row)
         delete_column_button = QPushButton("Delete Column")
         delete_column_button.clicked.connect(self.delete_current_column)
+        rename_column_button = QPushButton("Rename Column")
+        rename_column_button.clicked.connect(self.rename_current_column)
         cell_color_button = QPushButton("Cell Color")
         cell_color_button.clicked.connect(self.set_selected_cell_color)
         clear_color_button = QPushButton("Clear Color")
@@ -132,6 +137,7 @@ class MainWindow(QMainWindow):
         button_row.addWidget(add_column_right_button)
         button_row.addWidget(delete_button)
         button_row.addWidget(delete_column_button)
+        button_row.addWidget(rename_column_button)
         button_row.addWidget(cell_color_button)
         button_row.addWidget(clear_color_button)
         button_row.addStretch()
@@ -239,6 +245,9 @@ class MainWindow(QMainWindow):
         if model is not None:
             self.dataframes[self.current_table] = normalize_dataframe(model.dataframe(), self.current_table)
             self.project_cell_styles.setdefault(str(self.current_project_id), {})[self.current_table] = model.cell_colors()
+            self.project_column_display_names.setdefault(str(self.current_project_id), {})[
+                self.current_table
+            ] = model.header_display_names()
             self.project_dataframes[str(self.current_project_id)] = self.dataframes
 
     def _load_table(self, table_name: str, sync: bool = True) -> None:
@@ -246,7 +255,8 @@ class MainWindow(QMainWindow):
             self._sync_current_model()
         self.current_table = table_name
         table_styles = self.project_cell_styles.setdefault(str(self.current_project_id), {}).get(table_name, {})
-        self.table.setModel(PandasTableModel(self.dataframes[table_name], table_styles))
+        header_names = self.project_column_display_names.setdefault(str(self.current_project_id), {}).get(table_name, {})
+        self.table.setModel(PandasTableModel(self.dataframes[table_name], table_styles, header_names))
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
         self.detail.clear()
         self._show_module_guidance()
@@ -280,9 +290,11 @@ class MainWindow(QMainWindow):
             if self.project_path is not None:
                 self.project_dataframes[project_id] = load_project(self.project_path, project_id)
                 self.project_cell_styles[project_id] = load_cell_styles(self.project_path, project_id)
+                self.project_column_display_names[project_id] = load_column_display_names(self.project_path, project_id)
             else:
                 self.project_dataframes[project_id] = self._blank_project_data()
                 self.project_cell_styles[project_id] = {}
+                self.project_column_display_names[project_id] = {}
         self.dataframes = self.project_dataframes[project_id]
 
     def current_project_name(self, project_id: str | None = None) -> str:
@@ -374,6 +386,20 @@ class MainWindow(QMainWindow):
         if deleted:
             self.log_message(f"Deleted column '{deleted}' from {MODULE_LABELS.get(self.current_table, self.current_table)}.")
 
+    def rename_current_column(self) -> None:
+        column = self.table.current_column()
+        if column is None:
+            QMessageBox.information(self, "Rename Column", "이름을 변경할 열의 셀을 먼저 선택하세요.")
+            return
+        if self.table.rename_column_header(column):
+            model = self.table.model()
+            self.project_column_display_names.setdefault(str(self.current_project_id), {})[
+                self.current_table
+            ] = model.header_display_names()
+            self.log_message(
+                f"Renamed a column header in {MODULE_LABELS.get(self.current_table, self.current_table)}."
+            )
+
     def new_project(self) -> None:
         self._sync_current_model()
         self.projects = [{"id": "1", "project_name": DEFAULT_PROJECT_NAME}]
@@ -382,6 +408,7 @@ class MainWindow(QMainWindow):
         self.dataframes = self._blank_project_data()
         self.project_dataframes = {"1": self.dataframes}
         self.project_cell_styles = {"1": {}}
+        self.project_column_display_names = {"1": {}}
         self.project_path = None
         self._refresh_tree()
         self._load_table("drawing_request_summary", sync=False)
@@ -401,6 +428,9 @@ class MainWindow(QMainWindow):
         self.dataframes = load_project(path, self.current_project_id)
         self.project_dataframes = {self.current_project_id: self.dataframes}
         self.project_cell_styles = {self.current_project_id: load_cell_styles(path, self.current_project_id)}
+        self.project_column_display_names = {
+            self.current_project_id: load_column_display_names(path, self.current_project_id)
+        }
         self._refresh_tree()
         self._load_table("drawing_request_summary", sync=False)
         self.log_message(f"Opened project: {path}")
@@ -422,6 +452,11 @@ class MainWindow(QMainWindow):
         for project_id, dataframes in self.project_dataframes.items():
             save_project(self.project_path, self._apply_current_project_name_to_summary(dataframes, project_id), project_id)
             save_cell_styles(self.project_path, self.project_cell_styles.get(str(project_id), {}), project_id)
+            save_column_display_names(
+                self.project_path,
+                self.project_column_display_names.get(str(project_id), {}),
+                project_id,
+            )
         self.log_message(f"Saved project: {self.project_path}")
 
     def add_project(self) -> None:
@@ -437,6 +472,7 @@ class MainWindow(QMainWindow):
         self.module_names_by_project[str(project_id)] = list_module_display_names(self.project_path, project_id)
         self.project_dataframes[str(project_id)] = self._blank_project_data()
         self.project_cell_styles[str(project_id)] = {}
+        self.project_column_display_names[str(project_id)] = {}
         save_project(self.project_path, self.project_dataframes[str(project_id)], project_id)
         self._load_project_data(str(project_id))
         self._refresh_tree()
@@ -477,6 +513,7 @@ class MainWindow(QMainWindow):
         self.project_dataframes.pop(str(project_id), None)
         self.module_names_by_project.pop(str(project_id), None)
         self.project_cell_styles.pop(str(project_id), None)
+        self.project_column_display_names.pop(str(project_id), None)
         self.projects = list_projects(self.project_path)
         self.module_names_by_project = {
             str(project["id"]): list_module_display_names(self.project_path, project["id"])
@@ -486,6 +523,9 @@ class MainWindow(QMainWindow):
             self.current_project_id = str(self.projects[0]["id"])
             self.dataframes = load_project(self.project_path, self.current_project_id)
             self.project_cell_styles[self.current_project_id] = load_cell_styles(self.project_path, self.current_project_id)
+            self.project_column_display_names[self.current_project_id] = load_column_display_names(
+                self.project_path, self.current_project_id
+            )
             self.project_dataframes[self.current_project_id] = self.dataframes
         else:
             self.dataframes = self.project_dataframes.get(
@@ -496,6 +536,10 @@ class MainWindow(QMainWindow):
             self.project_cell_styles.setdefault(
                 str(self.current_project_id),
                 load_cell_styles(self.project_path, self.current_project_id),
+            )
+            self.project_column_display_names.setdefault(
+                str(self.current_project_id),
+                load_column_display_names(self.project_path, self.current_project_id),
             )
         self._refresh_tree()
         self._load_table("drawing_request_summary", sync=False)

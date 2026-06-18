@@ -6,10 +6,20 @@ from PySide6.QtGui import QColor
 
 
 class PandasTableModel(QAbstractTableModel):
-    def __init__(self, dataframe: pd.DataFrame, cell_colors: dict[tuple[int, str], str] | None = None):
+    def __init__(
+        self,
+        dataframe: pd.DataFrame,
+        cell_colors: dict[tuple[int, str], str] | None = None,
+        header_names: dict[str, str] | None = None,
+    ):
         super().__init__()
         self._df = dataframe.copy().fillna("")
         self._cell_colors = dict(cell_colors or {})
+        self._header_names = {
+            str(column): str(display_name)
+            for column, display_name in (header_names or {}).items()
+            if column in self._df.columns and str(display_name).strip()
+        }
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return len(self._df)
@@ -42,17 +52,56 @@ class PandasTableModel(QAbstractTableModel):
         return Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole):
-        if role != Qt.DisplayRole:
-            return None
         if orientation == Qt.Horizontal:
-            return str(self._df.columns[section])
-        return str(section + 1)
+            internal_name = str(self._df.columns[section])
+            if role == Qt.DisplayRole:
+                return self._header_names.get(internal_name, internal_name)
+            if role == Qt.UserRole:
+                return internal_name
+            if role == Qt.ToolTipRole:
+                return "더블클릭하거나 우클릭하여 열 제목을 변경할 수 있습니다."
+            return None
+        if role == Qt.DisplayRole:
+            return str(section + 1)
+        return None
 
     def dataframe(self) -> pd.DataFrame:
         return self._df.copy()
 
     def cell_colors(self) -> dict[tuple[int, str], str]:
         return dict(self._cell_colors)
+
+    def internal_column_name(self, column: int) -> str:
+        return str(self._df.columns[column])
+
+    def header_display_names(self) -> dict[str, str]:
+        return {
+            column: display_name
+            for column, display_name in self._header_names.items()
+            if column in self._df.columns and display_name != column
+        }
+
+    def rename_header(self, column: int, display_name: str) -> tuple[str, str]:
+        if column < 0 or column >= len(self._df.columns):
+            raise ValueError("변경할 열을 찾을 수 없습니다.")
+        display_name = str(display_name).strip()
+        if not display_name:
+            raise ValueError("열 제목은 비워둘 수 없습니다.")
+        internal_name = self.internal_column_name(column)
+        old_display_name = str(self.headerData(column, Qt.Horizontal, Qt.DisplayRole))
+        other_names = {
+            str(self.headerData(index, Qt.Horizontal, Qt.DisplayRole))
+            for index in range(self.columnCount())
+            if index != column
+        }
+        if display_name in other_names:
+            raise ValueError("같은 열 제목이 이미 있습니다.")
+        if display_name == internal_name:
+            self._header_names.pop(internal_name, None)
+        else:
+            self._header_names[internal_name] = display_name
+        self.headerDataChanged.emit(Qt.Horizontal, column, column)
+        return old_display_name, display_name
 
     def set_cell_color(self, indexes: list[QModelIndex], color: str) -> None:
         valid_indexes = [index for index in indexes if index.isValid()]
@@ -141,6 +190,7 @@ class PandasTableModel(QAbstractTableModel):
             for (row, name), color in self._cell_colors.items()
             if name != column_name
         }
+        self._header_names.pop(column_name, None)
         self.endRemoveColumns()
         return column_name
 

@@ -10,12 +10,14 @@ from src.database import (
     delete_project_record,
     initialize_database,
     load_cell_styles,
+    load_column_display_names,
     list_module_display_names,
     list_projects,
     load_project,
     rename_module_display,
     rename_project,
     save_cell_styles,
+    save_column_display_names,
     save_project,
 )
 from src.data_models import DEFAULT_PROJECT_NAME, TABLE_SCHEMAS
@@ -33,6 +35,7 @@ def test_projects_table_created_and_default_project_added(tmp_path):
     with sqlite3.connect(project) as connection:
         assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'").fetchone()
         assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='module_display_names'").fetchone()
+        assert connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='column_display_names'").fetchone()
 
 
 def test_module_display_names_save_and_load(tmp_path):
@@ -111,6 +114,22 @@ def test_cell_styles_save_and_load(tmp_path):
 
     assert loaded["drawing_request_summary"][(0, "Project")] == "#FFFF00"
     assert loaded["drawing_request_summary"][(1, "Product")] == "#DDEEFF"
+
+
+def test_column_display_names_save_and_load(tmp_path):
+    project = tmp_path / "sample.pfcproj"
+    create_project(project)
+    project_id = list_projects(project)[0]["id"]
+
+    save_column_display_names(
+        project,
+        {"esms": {"Customer Spec": "고객 사양", "Clause": "조항"}},
+        project_id,
+    )
+    loaded = load_column_display_names(project, project_id)
+
+    assert loaded["esms"]["Customer Spec"] == "고객 사양"
+    assert loaded["esms"]["Clause"] == "조항"
 
 
 def test_legacy_sample_without_project_info_gets_default_project(tmp_path):
