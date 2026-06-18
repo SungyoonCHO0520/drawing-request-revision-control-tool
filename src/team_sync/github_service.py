@@ -66,13 +66,13 @@ class GitHubService:
         result = self.run("pr", "view", branch, "--json", "number,url,mergeable,mergeStateStatus,statusCheckRollup")
         if result.returncode != 0:
             return result, None
-
-    def wait_for_checks(self, branch: str) -> subprocess.CompletedProcess:
-        return self.run("pr", "checks", branch, "--watch", "--fail-fast")
         try:
             return result, json.loads(result.stdout)
         except json.JSONDecodeError:
             return result, None
+
+    def wait_for_checks(self, branch: str) -> subprocess.CompletedProcess:
+        return self.run("pr", "checks", branch, "--watch", "--fail-fast")
 
     def merge_pull_request(self, branch: str) -> subprocess.CompletedProcess:
         return self.run("pr", "merge", branch, "--merge")
