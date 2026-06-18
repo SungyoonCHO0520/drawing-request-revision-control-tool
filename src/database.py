@@ -85,6 +85,19 @@ def ensure_project_tables(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS column_display_names (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT,
+            table_name TEXT,
+            column_name TEXT,
+            display_name TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
     connection.commit()
 
 
@@ -238,6 +251,7 @@ def delete_project_record(project_path: str | Path, project_id: str | int) -> No
             )
         connection.execute("DELETE FROM module_display_names WHERE project_id = ?", (project_id,))
         connection.execute("DELETE FROM cell_styles WHERE project_id = ?", (project_id,))
+        connection.execute("DELETE FROM column_display_names WHERE project_id = ?", (project_id,))
         connection.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         connection.commit()
 
@@ -290,6 +304,58 @@ def save_cell_styles(
                 INSERT INTO cell_styles
                 (project_id, table_name, row_index, column_name, background_color, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+        connection.commit()
+
+
+def load_column_display_names(project_path: str | Path, project_id: str | int) -> dict[str, dict[str, str]]:
+    initialize_database(project_path)
+    with connect(project_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT table_name, column_name, display_name
+            FROM column_display_names
+            WHERE project_id = ?
+            """,
+            (str(project_id),),
+        ).fetchall()
+        names: dict[str, dict[str, str]] = {}
+        for row in rows:
+            names.setdefault(str(row["table_name"]), {})[str(row["column_name"])] = str(row["display_name"])
+        return names
+
+
+def save_column_display_names(
+    project_path: str | Path,
+    names_by_table: dict[str, dict[str, str]],
+    project_id: str | int,
+) -> None:
+    initialize_database(project_path)
+    now = today_text()
+    with connect(project_path) as connection:
+        connection.execute("DELETE FROM column_display_names WHERE project_id = ?", (str(project_id),))
+        rows = []
+        for table_name, table_names in names_by_table.items():
+            for column_name, display_name in table_names.items():
+                if display_name and display_name != column_name:
+                    rows.append(
+                        (
+                            str(project_id),
+                            str(table_name),
+                            str(column_name),
+                            str(display_name),
+                            now,
+                            now,
+                        )
+                    )
+        if rows:
+            connection.executemany(
+                """
+                INSERT INTO column_display_names
+                (project_id, table_name, column_name, display_name, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QApplication, QComboBox, QStyledItemDelegate, QTableView
+from PySide6.QtWidgets import QApplication, QComboBox, QInputDialog, QMenu, QMessageBox, QStyledItemDelegate, QTableView
 
 from src.data_models import DROPDOWN_COLUMNS
 
@@ -27,6 +27,8 @@ class ComboDelegate(QStyledItemDelegate):
 
 
 class ExcelLikeTable(QTableView):
+    columnHeaderRenamed = Signal(str, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setSortingEnabled(True)
@@ -34,6 +36,9 @@ class ExcelLikeTable(QTableView):
         self.setSelectionBehavior(QTableView.SelectItems)
         self.setSelectionMode(QTableView.ExtendedSelection)
         self.horizontalHeader().setStretchLastSection(False)
+        self.horizontalHeader().sectionDoubleClicked.connect(self.rename_column_header)
+        self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.horizontalHeader().customContextMenuRequested.connect(self._show_header_context_menu)
         self.verticalHeader().setVisible(True)
         self._install_actions()
 
@@ -58,9 +63,47 @@ class ExcelLikeTable(QTableView):
         if model is None:
             return
         for col in range(model.columnCount()):
-            column_name = str(model.headerData(col, Qt.Horizontal, Qt.DisplayRole))
+            self.setItemDelegateForColumn(col, QStyledItemDelegate(self))
+            if hasattr(model, "internal_column_name"):
+                column_name = model.internal_column_name(col)
+            else:
+                column_name = str(model.headerData(col, Qt.Horizontal, Qt.DisplayRole))
             if column_name in DROPDOWN_COLUMNS:
                 self.setItemDelegateForColumn(col, ComboDelegate(DROPDOWN_COLUMNS[column_name], self))
+
+    def _show_header_context_menu(self, position) -> None:
+        section = self.horizontalHeader().logicalIndexAt(position)
+        if section < 0:
+            return
+        menu = QMenu(self)
+        rename_action = menu.addAction("Rename Column")
+        selected = menu.exec(self.horizontalHeader().mapToGlobal(position))
+        if selected == rename_action:
+            self.rename_column_header(section)
+
+    def rename_column_header(self, section: int, new_name: str | None = None) -> bool:
+        model = self.model()
+        if model is None or not hasattr(model, "rename_header"):
+            return False
+        old_name = str(model.headerData(section, Qt.Horizontal, Qt.DisplayRole))
+        if new_name is None:
+            new_name, accepted = QInputDialog.getText(
+                self,
+                "Rename Column",
+                "새 열 제목을 입력하세요.",
+                text=old_name,
+            )
+            if not accepted:
+                return False
+        try:
+            previous, renamed = model.rename_header(section, new_name)
+        except ValueError as error:
+            QMessageBox.warning(self, "Rename Column", str(error))
+            return False
+        self.apply_delegates()
+        self.resizeColumnToContents(section)
+        self.columnHeaderRenamed.emit(previous, renamed)
+        return True
 
     def copy_selection(self) -> None:
         indexes = self.selectedIndexes()
