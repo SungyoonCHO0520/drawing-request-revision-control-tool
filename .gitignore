@@ -39,3 +39,6 @@ dist/
 .env.*
 secrets/
 credentials/
+
+# Local team sync profile (per PC)
+.team_profile.local.json

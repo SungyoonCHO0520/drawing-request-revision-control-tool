@@ -1,5 +1,76 @@
 # Drawing Request & Revision Control Tool
 
+## Team Sync Manager 사용법
+
+Team Sync 기능은 성윤의 `sungyoon-codex` 브랜치와 학석의 `hakseok-claude` 브랜치를 안전하게 관리하고, 검증이 끝난 변경만 GitHub `main`에 통합합니다. 도면 PDF, Excel, CSV, `.pfcproj`, `.env`, 가상환경은 Commit 대상에서 차단됩니다.
+
+### 최초 설정
+
+1. `launch_and_sync.bat` 또는 `launch_app.bat`를 실행합니다.
+2. 최초 실행 창에서 `성윤 / sungyoon-codex / Codex` 또는 `학석 / hakseok-claude / Claude Code`를 선택합니다.
+3. 설정은 프로젝트 루트의 `.team_profile.local.json`에 저장됩니다. 이 파일은 PC별 설정이며 GitHub에는 올라가지 않습니다.
+4. 설정을 바꾸려면 프로그램 메뉴의 `Team Sync > 개발자 프로필 / 자동 동기화 설정`을 사용합니다.
+
+기본값은 `자동 확인 ON`, `자동 반영 OFF`입니다. 앱은 5분마다 `git fetch origin`으로 새 Main을 확인합니다. 자동 반영을 켜더라도 로컬 수정사항이 있으면 병합하지 않고 알림만 표시합니다.
+
+### Team Sync 화면
+
+프로그램 메뉴에서 `Team Sync > Team Sync Manager`를 선택합니다.
+
+- `최신 Main 확인`: GitHub main의 최신 Commit과 업데이트 유무를 확인합니다.
+- `Main 변경사항 반영`: 작업 폴더가 깨끗할 때만 `origin/main`을 개인 브랜치에 병합합니다.
+- `내 작업 업로드`: 전체 pytest 실행 후 안전한 소스만 Commit하고 개인 브랜치에 Push합니다.
+- `내 작업 Main 통합`: main 선행 병합, pytest, Push, PR 생성, GitHub Actions 검사를 거쳐 merge commit 방식으로 통합합니다.
+- `통합 상태 확인`: 최신 main과 현재 개인 브랜치 상태를 다시 확인합니다.
+- `GitHub 저장소 열기`: 현재 origin 저장소를 브라우저로 엽니다.
+
+### 팀원별 작업 순서
+
+성윤:
+
+1. 프로필에서 `성윤 / sungyoon-codex`를 선택합니다.
+2. `launch_and_sync.bat`로 앱을 실행합니다.
+3. Codex에서 수정하고 `launch_app.bat`로 확인합니다.
+4. `publish_my_work.bat` 또는 `내 작업 업로드`를 실행합니다.
+5. 준비되면 `integrate_my_work.bat` 또는 `내 작업 Main 통합`을 실행합니다.
+
+학석:
+
+1. 프로필에서 `학석 / hakseok-claude`를 선택합니다.
+2. `launch_and_sync.bat`로 앱을 실행합니다.
+3. Claude Code에서 수정하고 `launch_app.bat`로 확인합니다.
+4. `publish_my_work.bat` 또는 `내 작업 업로드`를 실행합니다.
+5. 준비되면 `integrate_my_work.bat` 또는 `내 작업 Main 통합`을 실행합니다.
+
+### 보조 배치 파일
+
+- `launch_and_sync.bat`: 프로필 브랜치를 준비하고 안전하게 Main을 반영한 뒤 앱을 실행합니다.
+- `publish_my_work.bat`: pytest, 민감자료 검사, Commit, 개인 브랜치 Push를 수행합니다. main에는 직접 Push하지 않습니다.
+- `integrate_my_work.bat`: GitHub PR과 Actions 검사를 이용해 개인 브랜치를 main에 통합합니다.
+- `sync_from_main.bat`: 로컬 변경이 없을 때만 Main을 병합하고 requirements 설치 및 pytest를 수행합니다.
+- `start_sungyoon_work.bat`, `start_hakseok_work.bat`: 해당 개발자의 프로필과 개인 브랜치로 전환한 뒤 앱을 실행합니다.
+
+### GitHub CLI 최초 로그인
+
+Main 통합 기능은 GitHub CLI가 필요합니다.
+
+```powershell
+winget install --id GitHub.cli
+gh auth login
+gh auth status
+```
+
+`gh auth login`에서 `GitHub.com`, `HTTPS`, `Login with a web browser`를 선택하고 브라우저 인증을 완료합니다.
+
+### 충돌 또는 검사 실패 시
+
+- 충돌 파일은 Team Sync 결과창과 CLI에 표시됩니다.
+- 프로그램은 충돌을 자동 해결하거나 파일을 덮어쓰지 않습니다.
+- 충돌을 직접 해결한 후 `git add <파일>`과 Commit을 수행하고 pytest를 다시 실행합니다.
+- GitHub Actions 실패 또는 PR 충돌 시 main 병합은 중단되고 PR 페이지가 열립니다.
+- `git reset --hard`, `git clean`, force push는 Team Sync에서 사용하지 않습니다.
+
+
 개발팀이 기구팀에 전달할 PFC IN 도면 기입 정보를 정리하고, 완성 도면 검토, 검사 기준서 DATA화, 실제 측정 DATA 판정, Revision 영향도 알람을 관리하는 로컬 Desktop Tool입니다.
 
 ## 1. Tool 목적
