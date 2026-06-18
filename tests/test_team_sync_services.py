@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -24,6 +25,7 @@ class FakeGit:
         self.staged = []
         self.merge_calls = []
         self.push_calls = []
+        self.commit_messages = []
 
     def command_available(self, _command):
         return True
@@ -44,7 +46,7 @@ class FakeGit:
     def status_porcelain(self):
         return [" M src/example.py"] if self.dirty else []
 
-    def changed_paths(self):
+    def changed_paths(self, include_rename_sources=False):
         return list(self.changed)
 
     def rev_parse(self, ref="HEAD"):
@@ -76,7 +78,9 @@ class FakeGit:
     def staged_paths(self):
         return list(self.staged)
 
-    def commit(self, _message):
+    def commit(self, message):
+        self.commit_messages.append(message)
+        self.dirty = False
         return completed()
 
     def push(self, branch, set_upstream=False):
@@ -222,6 +226,18 @@ def test_sensitive_file_stops_upload(tmp_path):
     assert git.push_calls == []
 
 
+def test_stage_failure_lists_exact_problem_paths(tmp_path):
+    git = FakeGit()
+    git.changed = ["한글 폴더/작업 파일 (최종).py"]
+    git.stage_paths = Mock(return_value=completed(returncode=1, stderr="stage failed"))
+
+    result = service(tmp_path, git).upload_my_work("test commit")
+
+    assert result.success is False
+    assert "Stage 대상 파일: 한글 폴더/작업 파일 (최종).py" in result.details
+    assert "Git 오류: stage failed" in result.details
+
+
 def test_merge_conflict_stops_main_integration(tmp_path):
     git = FakeGit()
     git.merge_result = completed(returncode=1, stderr="conflict")
@@ -248,6 +264,39 @@ def test_successful_integration_creates_pr_and_refreshes_personal_branch(tmp_pat
     assert len(git.push_calls) == 2
 
 
+def test_integration_commits_local_changes_without_separate_upload(tmp_path):
+    git = FakeGit()
+    git.dirty = True
+    git.changed = ["src/한글 작업 (최종).py"]
+    github = FakeGitHub()
+
+    result = service(tmp_path, git, github).integrate_my_work()
+
+    assert result.success is True
+    assert "자동 Commit" in result.message
+    assert git.staged == ["src/한글 작업 (최종).py"]
+    assert git.commit_messages == ["Integrate 성윤 local work"]
+    assert git.merge_calls == ["origin/main", "origin/main"]
+    assert github.merged == ["sungyoon-codex"]
+
+
+def test_sensitive_local_file_stops_direct_main_integration(tmp_path):
+    git = FakeGit()
+    git.dirty = True
+    git.changed = ["src/example.py", "회사 자료/검사 결과.xlsx"]
+    github = FakeGitHub()
+
+    result = service(tmp_path, git, github).integrate_my_work()
+
+    assert result.success is False
+    assert "민감자료" in result.message
+    assert "회사 자료/검사 결과.xlsx" in result.details
+    assert git.staged == []
+    assert git.commit_messages == []
+    assert git.merge_calls == []
+    assert github.merged == []
+
+
 def test_failed_github_checks_stop_pr_merge(tmp_path):
     git = FakeGit()
     github = FakeGitHub()
@@ -263,12 +312,15 @@ def test_failed_github_checks_stop_pr_merge(tmp_path):
 def test_github_pr_create_uses_personal_branch_and_main(tmp_path):
     calls = []
 
-    def runner(args, **_kwargs):
-        calls.append(args)
+    def runner(args, **kwargs):
+        calls.append((args, kwargs))
         return completed(stdout="https://github.com/example/repo/pull/1")
 
     github = GitHubService(tmp_path, runner=runner)
     github.create_pull_request("hakseok-claude", "Merge work")
 
-    assert calls[0][:6] == ["gh", "pr", "create", "--base", "main", "--head"]
-    assert "hakseok-claude" in calls[0]
+    args, kwargs = calls[0]
+    assert args[:6] == ["gh", "pr", "create", "--base", "main", "--head"]
+    assert "hakseok-claude" in args
+    assert kwargs["stdin"] == subprocess.DEVNULL
+    assert kwargs["shell"] is False

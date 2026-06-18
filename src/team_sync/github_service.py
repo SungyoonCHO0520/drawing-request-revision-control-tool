@@ -18,10 +18,12 @@ class GitHubService:
         return self.runner(
             ["gh", *args],
             cwd=self.project_root,
+            stdin=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
             errors="replace",
             capture_output=True,
+            shell=False,
         )
 
     def authenticated(self) -> bool:

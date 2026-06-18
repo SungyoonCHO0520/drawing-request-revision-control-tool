@@ -203,7 +203,8 @@ class TeamSyncDialog(QDialog):
         answer = QMessageBox.question(
             self,
             "내 작업 Main 통합",
-            "전체 테스트와 GitHub 검사를 통과하면 개인 브랜치를 main에 병합합니다. 계속할까요?",
+            "로컬 수정사항이 있으면 별도 업로드 없이 자동 Commit합니다.\n"
+            "그다음 최신 Main을 반영하고 전체 테스트와 GitHub 검사를 통과하면 main에 병합합니다. 계속할까요?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -229,4 +230,3 @@ class TeamSyncDialog(QDialog):
         if ProfileDialog(self.project_root, self).exec() == QDialog.Accepted:
             self.service = SyncService(self.project_root)
             self.refresh_status()
-
