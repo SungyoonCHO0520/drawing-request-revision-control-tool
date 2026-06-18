@@ -20,7 +20,7 @@ Team Sync 기능은 성윤의 `sungyoon-codex` 브랜치와 학석의 `hakseok-c
 - `최신 Main 확인`: GitHub main의 최신 Commit과 업데이트 유무를 확인합니다.
 - `Main 변경사항 반영`: 작업 폴더가 깨끗할 때만 `origin/main`을 개인 브랜치에 병합합니다.
 - `내 작업 업로드`: 전체 pytest 실행 후 안전한 소스만 Commit하고 개인 브랜치에 Push합니다.
-- `내 작업 Main 통합`: main 선행 병합, pytest, Push, PR 생성, GitHub Actions 검사를 거쳐 merge commit 방식으로 통합합니다.
+- `내 작업 Main 통합`: 로컬 수정사항이 있으면 별도 업로드 없이 민감자료 검사와 pytest 후 자동 Commit합니다. 이어서 최신 main 선행 병합, 재검사, Push, PR 생성, GitHub Actions 검사를 거쳐 merge commit 방식으로 통합합니다.
 - `통합 상태 확인`: 최신 main과 현재 개인 브랜치 상태를 다시 확인합니다.
 - `GitHub 저장소 열기`: 현재 origin 저장소를 브라우저로 엽니다.
 
@@ -31,16 +31,16 @@ Team Sync 기능은 성윤의 `sungyoon-codex` 브랜치와 학석의 `hakseok-c
 1. 프로필에서 `성윤 / sungyoon-codex`를 선택합니다.
 2. `launch_and_sync.bat`로 앱을 실행합니다.
 3. Codex에서 수정하고 `launch_app.bat`로 확인합니다.
-4. `publish_my_work.bat` 또는 `내 작업 업로드`를 실행합니다.
-5. 준비되면 `integrate_my_work.bat` 또는 `내 작업 Main 통합`을 실행합니다.
+4. 준비되면 `integrate_my_work.bat` 또는 `내 작업 Main 통합`을 실행합니다.
+5. 아직 Main에 합치지 않고 개인 브랜치에만 보관하려면 `publish_my_work.bat` 또는 `내 작업 업로드`를 사용합니다.
 
 학석:
 
 1. 프로필에서 `학석 / hakseok-claude`를 선택합니다.
 2. `launch_and_sync.bat`로 앱을 실행합니다.
 3. Claude Code에서 수정하고 `launch_app.bat`로 확인합니다.
-4. `publish_my_work.bat` 또는 `내 작업 업로드`를 실행합니다.
-5. 준비되면 `integrate_my_work.bat` 또는 `내 작업 Main 통합`을 실행합니다.
+4. 준비되면 `integrate_my_work.bat` 또는 `내 작업 Main 통합`을 실행합니다.
+5. 아직 Main에 합치지 않고 개인 브랜치에만 보관하려면 `publish_my_work.bat` 또는 `내 작업 업로드`를 사용합니다.
 
 ### 보조 배치 파일
 

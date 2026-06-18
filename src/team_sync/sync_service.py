@@ -10,7 +10,10 @@ from .result_models import SyncResult, SyncStatus
 from .security_check import find_sensitive_paths
 
 
-LOCAL_CHANGE_MESSAGE = "로컬 수정사항이 있어 Main 자동 반영을 건너뜁니다. 작업을 저장하거나 업로드한 후 다시 동기화하세요."
+LOCAL_CHANGE_MESSAGE = (
+    "로컬 수정사항이 있어 Main 자동 반영을 건너뜁니다. "
+    "'내 작업 Main 통합'을 실행하면 별도 업로드 없이 로컬 작업을 Commit한 뒤 최신 Main과 통합합니다."
+)
 
 
 def _now_text() -> str:
@@ -185,7 +188,7 @@ class SyncService:
                 return False
         return True
 
-    def integrate_my_work(self) -> SyncResult:
+    def integrate_my_work(self, commit_message: str = "") -> SyncResult:
         profile = self.profile()
         if profile is None:
             return SyncResult(False, "개발자 프로필을 먼저 선택하세요.")
@@ -198,11 +201,32 @@ class SyncService:
             return SyncResult(False, "GitHub CLI(gh)가 설치되어 있지 않습니다.")
         if not self.github.authenticated():
             return SyncResult(False, "GitHub CLI 로그인이 필요합니다. gh auth login을 실행하세요.")
-        if self.git.has_local_changes():
-            return SyncResult(False, "로컬 수정사항을 먼저 업로드하거나 Commit하세요.")
+        had_local_changes = self.git.has_local_changes()
         tested = self.git.run_tests()
         if tested.returncode != 0:
             return SyncResult(False, "테스트 실패로 Main 통합을 중단했습니다.", [tested.stdout[-3000:]])
+        if had_local_changes:
+            changed_paths = self.git.changed_paths()
+            sensitive = find_sensitive_paths(self.git.changed_paths(include_rename_sources=True))
+            if sensitive:
+                return SyncResult(False, "민감자료가 감지되어 Main 통합을 중단했습니다.", sensitive)
+            if not changed_paths:
+                return SyncResult(False, "로컬 수정파일 경로를 확인하지 못해 Main 통합을 중단했습니다.")
+            staged = self.git.stage_paths(changed_paths)
+            if staged.returncode != 0:
+                details = [f"Stage 대상 파일: {path}" for path in changed_paths]
+                if staged.stderr.strip():
+                    details.append(f"Git 오류: {staged.stderr.strip()}")
+                return SyncResult(False, "로컬 작업 Stage에 실패하여 Main 통합을 중단했습니다.", details)
+            staged_sensitive = find_sensitive_paths(self.git.staged_paths())
+            if staged_sensitive:
+                return SyncResult(False, "Stage에서 민감자료가 감지되어 Main 통합을 중단했습니다.", staged_sensitive)
+            message = commit_message.strip() or f"Integrate {profile.developer_name} local work"
+            committed = self.git.commit(message)
+            if committed.returncode != 0:
+                return SyncResult(False, "로컬 작업 Commit에 실패하여 Main 통합을 중단했습니다.", [committed.stderr.strip()])
+            if self.git.has_local_changes():
+                return SyncResult(False, "Commit 후에도 로컬 수정사항이 남아 Main 통합을 중단했습니다.")
         fetched = self.git.fetch()
         if fetched.returncode != 0:
             return SyncResult(False, "원격 저장소 접근에 실패했습니다.", [fetched.stderr.strip()])
@@ -254,4 +278,7 @@ class SyncService:
             return SyncResult(False, "Main은 통합됐지만 개인 브랜치 재동기화 Push에 실패했습니다.", pull_request_url=pr_url)
         main_commit = self.git.rev_parse("origin/main")
         self._save_sync(profile, main_commit)
-        return SyncResult(True, "내 작업을 Main에 통합하고 개인 브랜치를 최신화했습니다.", branch=branch, commit_id=main_commit, pull_request_url=pr_url)
+        message = "내 작업을 Main에 통합하고 개인 브랜치를 최신화했습니다."
+        if had_local_changes:
+            message = "로컬 작업을 자동 Commit한 뒤 최신 Main과 통합하고 개인 브랜치를 최신화했습니다."
+        return SyncResult(True, message, branch=branch, commit_id=main_commit, pull_request_url=pr_url)

@@ -29,16 +29,19 @@ class GitService:
         check: bool = False,
         input_text: str | None = None,
     ) -> subprocess.CompletedProcess:
-        result = self.runner(
-            list(args),
-            cwd=self.project_root,
-            input=input_text,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            shell=False,
-        )
+        options = {
+            "cwd": self.project_root,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "capture_output": True,
+            "shell": False,
+        }
+        if input_text is None:
+            options["stdin"] = subprocess.DEVNULL
+        else:
+            options["input"] = input_text
+        result = self.runner(list(args), **options)
         if check and result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Command failed")
         return result
@@ -170,11 +173,20 @@ class GitService:
         except ValueError:
             return False
 
+    @staticmethod
+    def console_python_executable() -> str:
+        executable = Path(sys.executable)
+        if executable.name.casefold() == "pythonw.exe":
+            console_executable = executable.with_name("python.exe")
+            if console_executable.exists():
+                return str(console_executable)
+        return str(executable)
+
     def run_tests(self) -> subprocess.CompletedProcess:
-        return self.run([sys.executable, "-m", "pytest"])
+        return self.run([self.console_python_executable(), "-m", "pytest"])
 
     def install_requirements(self) -> subprocess.CompletedProcess:
-        return self.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        return self.run([self.console_python_executable(), "-m", "pip", "install", "-r", "requirements.txt"])
 
     def changed_files_between(self, old_ref: str, new_ref: str) -> list[str]:
         result = self.git("diff", "--name-only", "-z", old_ref, new_ref)

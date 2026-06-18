@@ -13,6 +13,7 @@ def run_git(root: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", *args],
         cwd=root,
+        stdin=subprocess.DEVNULL,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -122,4 +123,40 @@ def test_stage_uses_nul_pathspec_stdin_and_shell_false(tmp_path):
     args, kwargs = calls[0]
     assert args == ["git", "add", "--all", "--pathspec-from-file=-", "--pathspec-file-nul"]
     assert kwargs["input"] == "한글 파일.py\0폴더/이름 (최종).py\0"
+    assert "stdin" not in kwargs
     assert kwargs["shell"] is False
+
+
+def test_commands_without_input_use_devnull_stdin(tmp_path):
+    calls = []
+
+    def runner(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    GitService(tmp_path, runner=runner).run(["git", "status"])
+
+    args, kwargs = calls[0]
+    assert args == ["git", "status"]
+    assert kwargs["stdin"] == subprocess.DEVNULL
+    assert "input" not in kwargs
+    assert kwargs["shell"] is False
+
+
+def test_run_tests_uses_console_python_when_app_uses_pythonw(tmp_path, monkeypatch):
+    calls = []
+    pythonw = tmp_path / "pythonw.exe"
+    python = tmp_path / "python.exe"
+    pythonw.touch()
+    python.touch()
+    monkeypatch.setattr("src.team_sync.git_service.sys.executable", str(pythonw))
+
+    def runner(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    GitService(tmp_path, runner=runner).run_tests()
+
+    args, kwargs = calls[0]
+    assert args == [str(python), "-m", "pytest"]
+    assert kwargs["stdin"] == subprocess.DEVNULL
