@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import pandas as pd
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Signal, Qt
 from PySide6.QtGui import QColor
 
 
 class PandasTableModel(QAbstractTableModel):
+    cellEdited = Signal(int, str, str, str)
+
     def __init__(
         self,
         dataframe: pd.DataFrame,
@@ -42,8 +44,13 @@ class PandasTableModel(QAbstractTableModel):
     def setData(self, index: QModelIndex, value, role: int = Qt.EditRole) -> bool:
         if role != Qt.EditRole or not index.isValid():
             return False
-        self._df.iat[index.row(), index.column()] = "" if value is None else str(value)
+        previous = str(self._df.iat[index.row(), index.column()])
+        updated = "" if value is None else str(value)
+        if previous == updated:
+            return True
+        self._df.iat[index.row(), index.column()] = updated
         self.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+        self.cellEdited.emit(index.row(), self.internal_column_name(index.column()), previous, updated)
         return True
 
     def flags(self, index: QModelIndex):
@@ -206,6 +213,11 @@ class PandasTableModel(QAbstractTableModel):
         if row >= len(self._df):
             for _ in range(row - len(self._df) + 1):
                 self.add_row()
-        self._df.iat[row, column] = value
+        previous = str(self._df.iat[row, column])
+        updated = "" if value is None else str(value)
+        if previous == updated:
+            return
+        self._df.iat[row, column] = updated
         idx = self.index(row, column)
         self.dataChanged.emit(idx, idx, [Qt.DisplayRole, Qt.EditRole])
+        self.cellEdited.emit(row, self.internal_column_name(column), previous, updated)

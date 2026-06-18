@@ -85,6 +85,26 @@ def test_duplicate_or_blank_column_header_is_rejected():
     except ValueError:
         pass
 
+
+def test_cell_edit_signal_contains_position_column_and_values():
+    model = PandasTableModel(pd.DataFrame([{"Item": "Before"}]))
+    edits = []
+    model.cellEdited.connect(lambda row, column, previous, updated: edits.append((row, column, previous, updated)))
+
+    model.setData(model.index(0, 0), "After", Qt.EditRole)
+
+    assert edits == [(0, "Item", "Before", "After")]
+
+
+def test_pasted_value_emits_cell_edit_signal():
+    model = PandasTableModel(pd.DataFrame([{"Item": ""}]))
+    edits = []
+    model.cellEdited.connect(lambda row, column, previous, updated: edits.append((row, column, previous, updated)))
+
+    model.set_value(0, 0, "Pasted")
+
+    assert edits == [(0, "Item", "", "Pasted")]
+
     try:
         model.rename_header(0, "  ")
         assert False, "Blank header should fail"
