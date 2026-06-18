@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import (
     QColorDialog,
@@ -41,11 +41,14 @@ from src.impact_rules import generate_inspection_revision_impact, generate_revis
 from src.inspection_pdf_parser import parse_inspection_pdf
 from src.measurement_checker import check_measurement_results
 from src.module_guidance import module_guidance
+from src.team_sync.profile import PROJECT_ROOT, load_profile
+from src.team_sync.sync_service import SyncService
 from src.validators import generate_review_checklist, validate_project
 from .excel_like_table import ExcelLikeTable
 from .impact_panel import ImpactPanel
 from .project_tree import ProjectTree
 from .table_model import PandasTableModel
+from .team_sync_dialog import ProfileDialog, TeamSyncDialog
 from .validation_panel import ValidationPanel
 
 
@@ -66,6 +69,7 @@ class MainWindow(QMainWindow):
         self._place_window_on_screen()
         self._refresh_tree()
         self._load_table(self.current_table, sync=False)
+        self._setup_team_sync_timer()
 
     def _blank_project_data(self) -> dict[str, pd.DataFrame]:
         return normalize_all({table: pd.DataFrame(columns=columns) for table, columns in TABLE_SCHEMAS.items()})
@@ -83,6 +87,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(x, y, width, height)
 
     def _build_ui(self) -> None:
+        self._build_team_sync_menu()
         self._build_toolbar()
 
         self.tree = ProjectTree()
@@ -166,6 +171,47 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self.table.selectionModel()
+
+    def _build_team_sync_menu(self) -> None:
+        menu = self.menuBar().addMenu("Team Sync")
+        open_action = QAction("Team Sync Manager", self)
+        open_action.triggered.connect(self.open_team_sync_manager)
+        menu.addAction(open_action)
+        profile_action = QAction("개발자 프로필 / 자동 동기화 설정", self)
+        profile_action.triggered.connect(self.change_team_profile)
+        menu.addAction(profile_action)
+
+    def _setup_team_sync_timer(self) -> None:
+        self.team_sync_service = SyncService(PROJECT_ROOT)
+        self.team_sync_timer = QTimer(self)
+        self.team_sync_timer.setInterval(5 * 60 * 1000)
+        self.team_sync_timer.timeout.connect(self._periodic_team_sync_check)
+        profile = load_profile(PROJECT_ROOT)
+        if profile and profile.auto_check:
+            self.team_sync_timer.start()
+
+    def open_team_sync_manager(self) -> None:
+        TeamSyncDialog(PROJECT_ROOT, self).exec()
+        self._restart_team_sync_timer()
+
+    def change_team_profile(self) -> None:
+        if ProfileDialog(PROJECT_ROOT, self).exec():
+            self.team_sync_service = SyncService(PROJECT_ROOT)
+            self._restart_team_sync_timer()
+            self.statusBar().showMessage("개발자 프로필과 자동 동기화 설정을 저장했습니다.", 8000)
+
+    def _restart_team_sync_timer(self) -> None:
+        self.team_sync_timer.stop()
+        profile = load_profile(PROJECT_ROOT)
+        if profile and profile.auto_check:
+            self.team_sync_timer.start()
+
+    def _periodic_team_sync_check(self) -> None:
+        profile = load_profile(PROJECT_ROOT)
+        if not profile or not profile.auto_check:
+            return
+        result = self.team_sync_service.check_main_updates(apply_if_enabled=True)
+        self.statusBar().showMessage(result.message, 15000)
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main")

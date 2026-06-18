@@ -31,6 +31,11 @@ goto :launch
 
 :launch
 echo Starting PFC IN Drawing Request Tool...
+if exist ".\.venv\Scripts\python.exe" (
+    ".\.venv\Scripts\python.exe" tools\team_sync_cli.py profile --branch hakseok-claude
+) else (
+    python tools\team_sync_cli.py profile --branch hakseok-claude
+)
 call launch_app.bat
 exit /b 0
 
