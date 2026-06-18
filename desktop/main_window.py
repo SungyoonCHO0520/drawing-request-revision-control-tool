@@ -115,7 +115,6 @@ class MainWindow(QMainWindow):
             "셀을 입력하거나 수정하면 입력 내용과 날짜·시간이 여기에 표시됩니다."
         )
         self.right_info_tabs = QTabWidget()
-        self.right_info_tabs.addTab(self.cell_edit_info, "셀 입력 정보")
         self.right_info_tabs.addTab(self.impact_panel, "입력 예시")
         right_layout.addWidget(self.detail, 1)
         right_layout.addWidget(QLabel("입력 예시 / 작성 요령"))
@@ -177,10 +176,17 @@ class MainWindow(QMainWindow):
         self.validation_panel = ValidationPanel()
         self.log = QTextEdit()
         self.log.setReadOnly(True)
+
+        right_bottom_container = QWidget()
+        right_bottom_layout = QVBoxLayout(right_bottom_container)
+        right_bottom_layout.setContentsMargins(0, 0, 0, 0)
+        right_bottom_layout.addWidget(QLabel("셀 입력 정보"))
+        right_bottom_layout.addWidget(self.cell_edit_info, 1)
+
         bottom = QSplitter(Qt.Horizontal)
         bottom.addWidget(self.validation_panel)
-        bottom.addWidget(self.log)
-        bottom.setSizes([700, 500])
+        bottom.addWidget(right_bottom_container)
+        bottom.setSizes([500, 500])
 
         root = QWidget()
         root_layout = QVBoxLayout(root)
@@ -396,7 +402,6 @@ class MainWindow(QMainWindow):
                 f"입력 값: {item['updated'] or '(빈 값)'}"
             )
         self.cell_edit_info.setPlainText("\n\n".join(blocks))
-        self.right_info_tabs.setCurrentWidget(self.cell_edit_info)
 
     def log_message(self, message: str) -> None:
         self.log.append(message)
