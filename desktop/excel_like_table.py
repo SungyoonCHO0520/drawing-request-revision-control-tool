@@ -40,7 +40,36 @@ class ExcelLikeTable(QTableView):
         self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
         self.horizontalHeader().customContextMenuRequested.connect(self._show_header_context_menu)
         self.verticalHeader().setVisible(True)
+        self._apply_grid_style()
         self._install_actions()
+
+    def _apply_grid_style(self) -> None:
+        """입력 칸을 또렷한 선으로 구분되게 표시한다."""
+        self.setShowGrid(True)
+        self.setGridStyle(Qt.SolidLine)
+        # gridline-color/헤더 테두리만 지정한다. 셀 background-color를 지정하면
+        # 모델의 BackgroundRole(셀 색상 기능)과 교차 행 색상이 덮어써지므로 건드리지 않는다.
+        self.setStyleSheet(
+            """
+            QTableView {
+                gridline-color: #9aa0a6;
+                border: 1px solid #9aa0a6;
+            }
+            QHeaderView::section {
+                background-color: #f2f3f5;
+                border: none;
+                border-right: 1px solid #9aa0a6;
+                border-bottom: 1px solid #9aa0a6;
+                padding: 4px;
+            }
+            QTableCornerButton::section {
+                background-color: #f2f3f5;
+                border: none;
+                border-right: 1px solid #9aa0a6;
+                border-bottom: 1px solid #9aa0a6;
+            }
+            """
+        )
 
     def _install_actions(self) -> None:
         copy_action = QAction("Copy", self)
