@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -57,6 +58,9 @@ from .project_tree import ProjectTree
 from .table_model import PandasTableModel
 from .team_sync_dialog import ProfileDialog, TeamSyncDialog
 from .validation_panel import ValidationPanel
+
+
+TEAM_SYNC_PASSWORD = "tjddbsgkrtjr"
 
 
 class MainWindow(QMainWindow):
@@ -230,6 +234,24 @@ class MainWindow(QMainWindow):
         profile_action.triggered.connect(self.change_team_profile)
         menu.addAction(profile_action)
 
+    @staticmethod
+    def _is_team_sync_password_valid(password: str) -> bool:
+        return password == TEAM_SYNC_PASSWORD
+
+    def _confirm_team_sync_access(self) -> bool:
+        password, ok = QInputDialog.getText(
+            self,
+            "Team Sync Password",
+            "개발자 비밀번호를 입력하세요:",
+            QLineEdit.Password,
+        )
+        if not ok:
+            return False
+        if self._is_team_sync_password_valid(password):
+            return True
+        QMessageBox.warning(self, "Team Sync", "비밀번호가 올바르지 않습니다.")
+        return False
+
     def _setup_team_sync_timer(self) -> None:
         self.team_sync_service = SyncService(PROJECT_ROOT)
         self.team_sync_timer = QTimer(self)
@@ -240,10 +262,14 @@ class MainWindow(QMainWindow):
             self.team_sync_timer.start()
 
     def open_team_sync_manager(self) -> None:
+        if not self._confirm_team_sync_access():
+            return
         TeamSyncDialog(PROJECT_ROOT, self).exec()
         self._restart_team_sync_timer()
 
     def change_team_profile(self) -> None:
+        if not self._confirm_team_sync_access():
+            return
         if ProfileDialog(PROJECT_ROOT, self).exec():
             self.team_sync_service = SyncService(PROJECT_ROOT)
             self._restart_team_sync_timer()
