@@ -36,7 +36,7 @@ if exist ".\.venv\Scripts\python.exe" (
 ) else (
     python tools\team_sync_cli.py profile --branch hakseok-claude
 )
-call launch_app.bat
+call "%~dp0launch_app.bat"
 exit /b 0
 
 :switch_branch
