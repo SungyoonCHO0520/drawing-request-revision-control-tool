@@ -1,5 +1,13 @@
 # Drawing Request & Revision Control Tool
 
+## Quick Start for Windows Users
+
+Double-click `launch_app.bat`.
+
+On the first run, the launcher automatically creates `.venv`, installs packages from `requirements.txt`, performs the safe startup sync, and opens the desktop app. Users do not need to type the setup commands manually.
+
+If Python 3 is not installed, the launcher shows a message with the Python download link. After installing Python 3, run `launch_app.bat` again.
+
 ## Team Sync Manager 사용법
 
 Team Sync 기능은 성윤의 `sungyoon-codex` 브랜치와 학석의 `hakseok-claude` 브랜치를 안전하게 관리하고, 검증이 끝난 변경만 GitHub `main`에 통합합니다. 도면 PDF, Excel, CSV, `.pfcproj`, `.env`, 가상환경은 Commit 대상에서 차단됩니다.

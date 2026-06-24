@@ -13,10 +13,12 @@ class PandasTableModel(QAbstractTableModel):
         dataframe: pd.DataFrame,
         cell_colors: dict[tuple[int, str], str] | None = None,
         header_names: dict[str, str] | None = None,
+        cell_text_colors: dict[tuple[int, str], str] | None = None,
     ):
         super().__init__()
         self._df = dataframe.copy().fillna("")
         self._cell_colors = dict(cell_colors or {})
+        self._cell_text_colors = dict(cell_text_colors or {})
         self._header_names = {
             str(column): str(display_name)
             for column, display_name in (header_names or {}).items()
@@ -37,6 +39,11 @@ class PandasTableModel(QAbstractTableModel):
         if role == Qt.BackgroundRole:
             column_name = str(self._df.columns[index.column()])
             color = self._cell_colors.get((index.row(), column_name))
+            if color:
+                return QColor(color)
+        if role == Qt.ForegroundRole:
+            column_name = str(self._df.columns[index.column()])
+            color = self._cell_text_colors.get((index.row(), column_name))
             if color:
                 return QColor(color)
         return None
@@ -78,6 +85,9 @@ class PandasTableModel(QAbstractTableModel):
     def cell_colors(self) -> dict[tuple[int, str], str]:
         return dict(self._cell_colors)
 
+    def cell_text_colors(self) -> dict[tuple[int, str], str]:
+        return dict(self._cell_text_colors)
+
     def internal_column_name(self, column: int) -> str:
         return str(self._df.columns[column])
 
@@ -117,7 +127,7 @@ class PandasTableModel(QAbstractTableModel):
         for index in valid_indexes:
             column_name = str(self._df.columns[index.column()])
             self._cell_colors[(index.row(), column_name)] = color
-        self._emit_background_changed(valid_indexes)
+        self._emit_data_changed(valid_indexes, [Qt.BackgroundRole])
 
     def clear_cell_color(self, indexes: list[QModelIndex]) -> None:
         valid_indexes = [index for index in indexes if index.isValid()]
@@ -126,20 +136,42 @@ class PandasTableModel(QAbstractTableModel):
         for index in valid_indexes:
             column_name = str(self._df.columns[index.column()])
             self._cell_colors.pop((index.row(), column_name), None)
-        self._emit_background_changed(valid_indexes)
+        self._emit_data_changed(valid_indexes, [Qt.BackgroundRole])
 
-    def _emit_background_changed(self, indexes: list[QModelIndex]) -> None:
+    def set_cell_text_color(self, indexes: list[QModelIndex], color: str) -> None:
+        valid_indexes = [index for index in indexes if index.isValid()]
+        if not valid_indexes:
+            return
+        for index in valid_indexes:
+            column_name = str(self._df.columns[index.column()])
+            self._cell_text_colors[(index.row(), column_name)] = color
+        self._emit_data_changed(valid_indexes, [Qt.ForegroundRole])
+
+    def clear_cell_text_color(self, indexes: list[QModelIndex]) -> None:
+        valid_indexes = [index for index in indexes if index.isValid()]
+        if not valid_indexes:
+            return
+        for index in valid_indexes:
+            column_name = str(self._df.columns[index.column()])
+            self._cell_text_colors.pop((index.row(), column_name), None)
+        self._emit_data_changed(valid_indexes, [Qt.ForegroundRole])
+
+    def _emit_data_changed(self, indexes: list[QModelIndex], roles: list[int]) -> None:
         rows = [index.row() for index in indexes]
         columns = [index.column() for index in indexes]
         top_left = self.index(min(rows), min(columns))
         bottom_right = self.index(max(rows), max(columns))
-        self.dataChanged.emit(top_left, bottom_right, [Qt.BackgroundRole])
+        self.dataChanged.emit(top_left, bottom_right, roles)
 
     def _shift_colors_for_insert_row(self, position: int) -> None:
         shifted = {}
         for (row, column_name), color in self._cell_colors.items():
             shifted[(row + 1 if row >= position else row, column_name)] = color
         self._cell_colors = shifted
+        shifted_text = {}
+        for (row, column_name), color in self._cell_text_colors.items():
+            shifted_text[(row + 1 if row >= position else row, column_name)] = color
+        self._cell_text_colors = shifted_text
 
     def _shift_colors_for_deleted_rows(self, rows: list[int]) -> None:
         removed = sorted(set(row for row in rows if 0 <= row < len(self._df)))
@@ -152,6 +184,13 @@ class PandasTableModel(QAbstractTableModel):
             shift = sum(1 for removed_row in removed if removed_row < row)
             shifted[(row - shift, column_name)] = color
         self._cell_colors = shifted
+        shifted_text = {}
+        for (row, column_name), color in self._cell_text_colors.items():
+            if row in removed:
+                continue
+            shift = sum(1 for removed_row in removed if removed_row < row)
+            shifted_text[(row - shift, column_name)] = color
+        self._cell_text_colors = shifted_text
 
     def add_row(self) -> None:
         self.insert_row(len(self._df))
@@ -195,6 +234,11 @@ class PandasTableModel(QAbstractTableModel):
         self._cell_colors = {
             (row, name): color
             for (row, name), color in self._cell_colors.items()
+            if name != column_name
+        }
+        self._cell_text_colors = {
+            (row, name): color
+            for (row, name), color in self._cell_text_colors.items()
             if name != column_name
         }
         self._header_names.pop(column_name, None)

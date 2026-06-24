@@ -57,6 +57,7 @@ class ExcelLikeTable(QTableView):
             }
             QHeaderView::section {
                 background-color: #f2f3f5;
+                color: #1f2933;
                 border: none;
                 border-right: 1px solid #9aa0a6;
                 border-bottom: 1px solid #9aa0a6;
