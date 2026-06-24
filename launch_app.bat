@@ -18,7 +18,7 @@ if errorlevel 1 goto fail
 
 if /I "%~1"=="--setup-only" exit /b 0
 
-call launch_and_sync.bat
+call "%~dp0launch_and_sync.bat"
 exit /b %errorlevel%
 
 :ensure_python
