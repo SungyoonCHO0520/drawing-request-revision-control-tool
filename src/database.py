@@ -80,11 +80,15 @@ def ensure_project_tables(connection: sqlite3.Connection) -> None:
             row_index INTEGER,
             column_name TEXT,
             background_color TEXT,
+            text_color TEXT,
             created_at TEXT,
             updated_at TEXT
         )
         """
     )
+    cell_style_columns = table_columns(connection, "cell_styles")
+    if "text_color" not in cell_style_columns:
+        connection.execute("ALTER TABLE cell_styles ADD COLUMN text_color TEXT")
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS column_display_names (
@@ -269,8 +273,28 @@ def load_cell_styles(project_path: str | Path, project_id: str | int) -> dict[st
         ).fetchall()
         styles: dict[str, dict[tuple[int, str], str]] = {}
         for row in rows:
-            table_styles = styles.setdefault(str(row["table_name"]), {})
-            table_styles[(int(row["row_index"]), str(row["column_name"]))] = str(row["background_color"])
+            if row["background_color"]:
+                table_styles = styles.setdefault(str(row["table_name"]), {})
+                table_styles[(int(row["row_index"]), str(row["column_name"]))] = str(row["background_color"])
+        return styles
+
+
+def load_cell_text_colors(project_path: str | Path, project_id: str | int) -> dict[str, dict[tuple[int, str], str]]:
+    initialize_database(project_path)
+    with connect(project_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT table_name, row_index, column_name, text_color
+            FROM cell_styles
+            WHERE project_id = ?
+            """,
+            (str(project_id),),
+        ).fetchall()
+        styles: dict[str, dict[tuple[int, str], str]] = {}
+        for row in rows:
+            if row["text_color"]:
+                table_styles = styles.setdefault(str(row["table_name"]), {})
+                table_styles[(int(row["row_index"]), str(row["column_name"]))] = str(row["text_color"])
         return styles
 
 
@@ -278,15 +302,23 @@ def save_cell_styles(
     project_path: str | Path,
     styles_by_table: dict[str, dict[tuple[int, str], str]],
     project_id: str | int,
+    text_colors_by_table: dict[str, dict[tuple[int, str], str]] | None = None,
 ) -> None:
     initialize_database(project_path)
     now = today_text()
+    text_colors_by_table = text_colors_by_table or {}
     with connect(project_path) as connection:
         connection.execute("DELETE FROM cell_styles WHERE project_id = ?", (str(project_id),))
         rows = []
-        for table_name, table_styles in styles_by_table.items():
-            for (row_index, column_name), background_color in table_styles.items():
-                if background_color:
+        table_names = set(styles_by_table) | set(text_colors_by_table)
+        for table_name in table_names:
+            table_styles = styles_by_table.get(table_name, {})
+            table_text_colors = text_colors_by_table.get(table_name, {})
+            style_keys = set(table_styles) | set(table_text_colors)
+            for row_index, column_name in style_keys:
+                background_color = table_styles.get((row_index, column_name), "")
+                text_color = table_text_colors.get((row_index, column_name), "")
+                if background_color or text_color:
                     rows.append(
                         (
                             str(project_id),
@@ -294,6 +326,7 @@ def save_cell_styles(
                             int(row_index),
                             str(column_name),
                             str(background_color),
+                            str(text_color),
                             now,
                             now,
                         )
@@ -302,8 +335,8 @@ def save_cell_styles(
             connection.executemany(
                 """
                 INSERT INTO cell_styles
-                (project_id, table_name, row_index, column_name, background_color, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (project_id, table_name, row_index, column_name, background_color, text_color, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )

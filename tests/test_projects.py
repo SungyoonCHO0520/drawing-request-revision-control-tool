@@ -9,6 +9,7 @@ from src.database import (
     create_project,
     delete_project_record,
     initialize_database,
+    load_cell_text_colors,
     load_cell_styles,
     load_column_display_names,
     list_module_display_names,
@@ -109,11 +110,20 @@ def test_cell_styles_save_and_load(tmp_path):
             }
         },
         project_id,
+        {
+            "drawing_request_summary": {
+                (0, "Project"): "#000000",
+                (1, "Product"): "#AA0000",
+            }
+        },
     )
     loaded = load_cell_styles(project, project_id)
+    loaded_text = load_cell_text_colors(project, project_id)
 
     assert loaded["drawing_request_summary"][(0, "Project")] == "#FFFF00"
     assert loaded["drawing_request_summary"][(1, "Product")] == "#DDEEFF"
+    assert loaded_text["drawing_request_summary"][(0, "Project")] == "#000000"
+    assert loaded_text["drawing_request_summary"][(1, "Product")] == "#AA0000"
 
 
 def test_column_display_names_save_and_load(tmp_path):

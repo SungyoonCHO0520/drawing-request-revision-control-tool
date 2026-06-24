@@ -49,18 +49,24 @@ def test_cell_color_can_be_applied_shifted_and_cleared():
     first_cell = model.index(0, 0)
 
     model.set_cell_color([first_cell], "#FFFF00")
+    model.set_cell_text_color([first_cell], "#000000")
 
     assert model.cell_colors() == {(0, "A"): "#FFFF00"}
+    assert model.cell_text_colors() == {(0, "A"): "#000000"}
     assert model.data(first_cell, Qt.BackgroundRole).name().upper() == "#FFFF00"
+    assert model.data(first_cell, Qt.ForegroundRole).name().upper() == "#000000"
 
     model.insert_row(0)
 
     assert model.cell_colors() == {(1, "A"): "#FFFF00"}
+    assert model.cell_text_colors() == {(1, "A"): "#000000"}
 
     shifted_cell = model.index(1, 0)
     model.clear_cell_color([shifted_cell])
+    model.clear_cell_text_color([shifted_cell])
 
     assert model.cell_colors() == {}
+    assert model.cell_text_colors() == {}
 
 
 def test_column_header_can_be_renamed_without_changing_internal_column():

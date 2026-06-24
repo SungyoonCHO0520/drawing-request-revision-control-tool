@@ -13,12 +13,14 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
     QTabWidget,
     QTextEdit,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +32,7 @@ from src.database import (
     delete_project_record,
     list_module_display_names,
     list_projects,
+    load_cell_text_colors,
     load_cell_styles,
     load_column_display_names,
     load_project,
@@ -68,6 +71,7 @@ class MainWindow(QMainWindow):
         self.dataframes = self._blank_project_data()
         self.project_dataframes = {"1": self.dataframes}
         self.project_cell_styles: dict[str, dict[str, dict[tuple[int, str], str]]] = {"1": {}}
+        self.project_cell_text_colors: dict[str, dict[str, dict[tuple[int, str], str]]] = {"1": {}}
         self.project_column_display_names: dict[str, dict[str, dict[str, str]]] = {"1": {}}
         self.cell_edit_records: list[dict[str, str]] = []
         self.current_table = "drawing_request_summary"
@@ -103,6 +107,7 @@ class MainWindow(QMainWindow):
         self.table = ExcelLikeTable()
 
         right_widget = QWidget()
+        right_widget.setMinimumWidth(420)
         right_layout = QVBoxLayout(right_widget)
         right_layout.addWidget(QLabel("선택 행 상세"))
         self.detail = QTextEdit()
@@ -122,40 +127,44 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.right_info_tabs, 1)
 
         center_widget = QWidget()
+        center_widget.setMinimumWidth(520)
         center_layout = QVBoxLayout(center_widget)
         button_row = QHBoxLayout()
-        add_row_above_button = QPushButton("Insert Row Above")
-        add_row_above_button.clicked.connect(self.table.insert_row_above)
-        add_row_below_button = QPushButton("Insert Row Below")
-        add_row_below_button.clicked.connect(self.table.insert_row_below)
-        add_column_left_button = QPushButton("Insert Column Left")
-        add_column_left_button.clicked.connect(self.table.insert_column_left)
-        add_column_right_button = QPushButton("Insert Column Right")
-        add_column_right_button.clicked.connect(self.table.insert_column_right)
-        delete_button = QPushButton("Delete Row")
-        delete_button.clicked.connect(self.delete_current_row)
-        delete_column_button = QPushButton("Delete Column")
-        delete_column_button.clicked.connect(self.delete_current_column)
-        rename_column_button = QPushButton("Rename Column")
-        rename_column_button.clicked.connect(self.rename_current_column)
-        cell_color_button = QPushButton("Cell Color")
-        cell_color_button.clicked.connect(self.set_selected_cell_color)
-        clear_color_button = QPushButton("Clear Color")
-        clear_color_button.clicked.connect(self.clear_selected_cell_color)
-        button_row.addWidget(add_row_above_button)
-        button_row.addWidget(add_row_below_button)
-        button_row.addWidget(add_column_left_button)
-        button_row.addWidget(add_column_right_button)
-        button_row.addWidget(delete_button)
-        button_row.addWidget(delete_column_button)
-        button_row.addWidget(rename_column_button)
-        button_row.addWidget(cell_color_button)
-        button_row.addWidget(clear_color_button)
+        row_menu_button = self._create_action_menu_button(
+            "Row Actions",
+            [
+                ("Insert Row Above", self.table.insert_row_above),
+                ("Insert Row Below", self.table.insert_row_below),
+                ("Delete Selected Row", self.delete_current_row),
+            ],
+        )
+        column_menu_button = self._create_action_menu_button(
+            "Column Actions",
+            [
+                ("Insert Column Left", self.table.insert_column_left),
+                ("Insert Column Right", self.table.insert_column_right),
+                ("Rename Selected Column", self.rename_current_column),
+                ("Delete Selected Column", self.delete_current_column),
+            ],
+        )
+        format_menu_button = self._create_action_menu_button(
+            "Cell Format",
+            [
+                ("Set Cell Background", self.set_selected_cell_color),
+                ("Clear Cell Background", self.clear_selected_cell_color),
+                ("Set Text Color", self.set_selected_cell_text_color),
+                ("Clear Text Color", self.clear_selected_cell_text_color),
+            ],
+        )
+        button_row.addWidget(row_menu_button)
+        button_row.addWidget(column_menu_button)
+        button_row.addWidget(format_menu_button)
         button_row.addStretch()
         center_layout.addLayout(button_row)
         center_layout.addWidget(self.table)
 
         left_widget = QWidget()
+        left_widget.setMinimumWidth(180)
         left_layout = QVBoxLayout(left_widget)
         project_button_row = QHBoxLayout()
         add_project_button = QPushButton("Add Project")
@@ -171,7 +180,10 @@ class MainWindow(QMainWindow):
         splitter.addWidget(left_widget)
         splitter.addWidget(center_widget)
         splitter.addWidget(right_widget)
-        splitter.setSizes([220, 880, 360])
+        splitter.setSizes([190, 760, 550])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(2, 2)
 
         self.validation_panel = ValidationPanel()
         self.log = QTextEdit()
@@ -195,6 +207,19 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         self.table.selectionModel()
+
+    def _create_action_menu_button(self, label: str, actions: list[tuple[str, object]]) -> QToolButton:
+        button = QToolButton(self)
+        button.setText(label)
+        button.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(button)
+        for action_label, callback in actions:
+            action = QAction(action_label, button)
+            action.triggered.connect(lambda checked=False, selected=callback: selected())
+            menu.addAction(action)
+        button.setMenu(menu)
+        button.setMinimumWidth(130)
+        return button
 
     def _build_team_sync_menu(self) -> None:
         menu = self.menuBar().addMenu("Team Sync")
@@ -263,6 +288,9 @@ class MainWindow(QMainWindow):
         if model is not None:
             self.dataframes[self.current_table] = normalize_dataframe(model.dataframe(), self.current_table)
             self.project_cell_styles.setdefault(str(self.current_project_id), {})[self.current_table] = model.cell_colors()
+            self.project_cell_text_colors.setdefault(str(self.current_project_id), {})[
+                self.current_table
+            ] = model.cell_text_colors()
             self.project_column_display_names.setdefault(str(self.current_project_id), {})[
                 self.current_table
             ] = model.header_display_names()
@@ -273,8 +301,9 @@ class MainWindow(QMainWindow):
             self._sync_current_model()
         self.current_table = table_name
         table_styles = self.project_cell_styles.setdefault(str(self.current_project_id), {}).get(table_name, {})
+        table_text_colors = self.project_cell_text_colors.setdefault(str(self.current_project_id), {}).get(table_name, {})
         header_names = self.project_column_display_names.setdefault(str(self.current_project_id), {}).get(table_name, {})
-        model = PandasTableModel(self.dataframes[table_name], table_styles, header_names)
+        model = PandasTableModel(self.dataframes[table_name], table_styles, header_names, table_text_colors)
         model.cellEdited.connect(self._cell_edited)
         self.table.setModel(model)
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
@@ -310,10 +339,12 @@ class MainWindow(QMainWindow):
             if self.project_path is not None:
                 self.project_dataframes[project_id] = load_project(self.project_path, project_id)
                 self.project_cell_styles[project_id] = load_cell_styles(self.project_path, project_id)
+                self.project_cell_text_colors[project_id] = load_cell_text_colors(self.project_path, project_id)
                 self.project_column_display_names[project_id] = load_column_display_names(self.project_path, project_id)
             else:
                 self.project_dataframes[project_id] = self._blank_project_data()
                 self.project_cell_styles[project_id] = {}
+                self.project_cell_text_colors[project_id] = {}
                 self.project_column_display_names[project_id] = {}
         self.dataframes = self.project_dataframes[project_id]
 
@@ -464,6 +495,7 @@ class MainWindow(QMainWindow):
         self.dataframes = self._blank_project_data()
         self.project_dataframes = {"1": self.dataframes}
         self.project_cell_styles = {"1": {}}
+        self.project_cell_text_colors = {"1": {}}
         self.project_column_display_names = {"1": {}}
         self.project_path = None
         self._refresh_tree()
@@ -484,6 +516,7 @@ class MainWindow(QMainWindow):
         self.dataframes = load_project(path, self.current_project_id)
         self.project_dataframes = {self.current_project_id: self.dataframes}
         self.project_cell_styles = {self.current_project_id: load_cell_styles(path, self.current_project_id)}
+        self.project_cell_text_colors = {self.current_project_id: load_cell_text_colors(path, self.current_project_id)}
         self.project_column_display_names = {
             self.current_project_id: load_column_display_names(path, self.current_project_id)
         }
@@ -507,7 +540,12 @@ class MainWindow(QMainWindow):
             }
         for project_id, dataframes in self.project_dataframes.items():
             save_project(self.project_path, self._apply_current_project_name_to_summary(dataframes, project_id), project_id)
-            save_cell_styles(self.project_path, self.project_cell_styles.get(str(project_id), {}), project_id)
+            save_cell_styles(
+                self.project_path,
+                self.project_cell_styles.get(str(project_id), {}),
+                project_id,
+                self.project_cell_text_colors.get(str(project_id), {}),
+            )
             save_column_display_names(
                 self.project_path,
                 self.project_column_display_names.get(str(project_id), {}),
@@ -528,6 +566,7 @@ class MainWindow(QMainWindow):
         self.module_names_by_project[str(project_id)] = list_module_display_names(self.project_path, project_id)
         self.project_dataframes[str(project_id)] = self._blank_project_data()
         self.project_cell_styles[str(project_id)] = {}
+        self.project_cell_text_colors[str(project_id)] = {}
         self.project_column_display_names[str(project_id)] = {}
         save_project(self.project_path, self.project_dataframes[str(project_id)], project_id)
         self._load_project_data(str(project_id))
@@ -569,6 +608,7 @@ class MainWindow(QMainWindow):
         self.project_dataframes.pop(str(project_id), None)
         self.module_names_by_project.pop(str(project_id), None)
         self.project_cell_styles.pop(str(project_id), None)
+        self.project_cell_text_colors.pop(str(project_id), None)
         self.project_column_display_names.pop(str(project_id), None)
         self.projects = list_projects(self.project_path)
         self.module_names_by_project = {
@@ -579,6 +619,9 @@ class MainWindow(QMainWindow):
             self.current_project_id = str(self.projects[0]["id"])
             self.dataframes = load_project(self.project_path, self.current_project_id)
             self.project_cell_styles[self.current_project_id] = load_cell_styles(self.project_path, self.current_project_id)
+            self.project_cell_text_colors[self.current_project_id] = load_cell_text_colors(
+                self.project_path, self.current_project_id
+            )
             self.project_column_display_names[self.current_project_id] = load_column_display_names(
                 self.project_path, self.current_project_id
             )
@@ -592,6 +635,10 @@ class MainWindow(QMainWindow):
             self.project_cell_styles.setdefault(
                 str(self.current_project_id),
                 load_cell_styles(self.project_path, self.current_project_id),
+            )
+            self.project_cell_text_colors.setdefault(
+                str(self.current_project_id),
+                load_cell_text_colors(self.project_path, self.current_project_id),
             )
             self.project_column_display_names.setdefault(
                 str(self.current_project_id),
@@ -627,6 +674,37 @@ class MainWindow(QMainWindow):
         model.clear_cell_color(indexes)
         self.project_cell_styles.setdefault(str(self.current_project_id), {})[self.current_table] = model.cell_colors()
         self.log_message(f"Cleared cell color from {len(indexes)} selected cell(s).")
+
+    def set_selected_cell_text_color(self) -> None:
+        indexes = self.table.selectedIndexes()
+        if not indexes:
+            QMessageBox.information(self, "Text Color", "글씨 색상을 적용할 셀을 먼저 선택하세요.")
+            return
+        color = QColorDialog.getColor(parent=self, title="Select Text Color")
+        if not color.isValid():
+            return
+        model = self.table.model()
+        if model is None:
+            return
+        model.set_cell_text_color(indexes, color.name().upper())
+        self.project_cell_text_colors.setdefault(str(self.current_project_id), {})[
+            self.current_table
+        ] = model.cell_text_colors()
+        self.log_message(f"Applied text color {color.name().upper()} to {len(indexes)} selected cell(s).")
+
+    def clear_selected_cell_text_color(self) -> None:
+        indexes = self.table.selectedIndexes()
+        if not indexes:
+            QMessageBox.information(self, "Clear Text Color", "글씨 색상을 지울 셀을 먼저 선택하세요.")
+            return
+        model = self.table.model()
+        if model is None:
+            return
+        model.clear_cell_text_color(indexes)
+        self.project_cell_text_colors.setdefault(str(self.current_project_id), {})[
+            self.current_table
+        ] = model.cell_text_colors()
+        self.log_message(f"Cleared text color from {len(indexes)} selected cell(s).")
 
     def rename_tree_item(self, item) -> None:
         item_type = item.data(0, Qt.UserRole + 3)
