@@ -143,6 +143,22 @@ def test_commands_without_input_use_devnull_stdin(tmp_path):
     assert kwargs["shell"] is False
 
 
+def test_fetch_returns_clear_error_after_timeout(tmp_path):
+    calls = []
+
+    def runner(args, **kwargs):
+        calls.append((args, kwargs))
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    result = GitService(tmp_path, runner=runner).fetch()
+
+    args, kwargs = calls[0]
+    assert args == ["git", "fetch", "origin"]
+    assert kwargs["timeout"] == 60
+    assert result.returncode == 124
+    assert "60초" in result.stderr
+
+
 def test_run_tests_uses_console_python_when_app_uses_pythonw(tmp_path, monkeypatch):
     calls = []
     pythonw = tmp_path / "pythonw.exe"
@@ -158,5 +174,9 @@ def test_run_tests_uses_console_python_when_app_uses_pythonw(tmp_path, monkeypat
     GitService(tmp_path, runner=runner).run_tests()
 
     args, kwargs = calls[0]
-    assert args == [str(python), "-m", "pytest"]
+    assert args[:3] == [str(python), "-m", "pytest"]
+    assert args[3:5] == ["-p", "no:cacheprovider"]
+    assert args[5] == "--basetemp"
+    assert Path(args[6]).name.startswith("run-")
+    assert Path(args[6]).parent.name == "pytest"
     assert kwargs["stdin"] == subprocess.DEVNULL

@@ -159,6 +159,21 @@ def test_main_update_is_detected(tmp_path):
     assert "새로운 Main 업데이트" in result.message
 
 
+def test_main_check_still_succeeds_when_profile_record_cannot_be_saved(tmp_path, monkeypatch):
+    git = FakeGit()
+    sync_service = service(tmp_path, git)
+    monkeypatch.setattr(
+        "src.team_sync.sync_service.save_profile",
+        Mock(side_effect=PermissionError(13, "Permission denied")),
+    )
+
+    result = sync_service.check_main_updates()
+
+    assert result.success is True
+    assert "최신 Main" in result.message
+    assert "기록을 저장하지 못했습니다" in " ".join(result.details)
+
+
 def test_clean_worktree_merges_main(tmp_path):
     git = FakeGit()
 

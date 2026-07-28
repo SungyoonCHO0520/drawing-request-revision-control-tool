@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -28,6 +30,7 @@ class GitService:
         args: Sequence[str],
         check: bool = False,
         input_text: str | None = None,
+        timeout: float | None = None,
     ) -> subprocess.CompletedProcess:
         options = {
             "cwd": self.project_root,
@@ -41,16 +44,31 @@ class GitService:
             options["stdin"] = subprocess.DEVNULL
         else:
             options["input"] = input_text
-        result = self.runner(list(args), **options)
+        if timeout is not None:
+            options["timeout"] = timeout
+        try:
+            result = self.runner(list(args), **options)
+        except subprocess.TimeoutExpired:
+            result = subprocess.CompletedProcess(
+                list(args),
+                124,
+                "",
+                f"명령 실행 시간이 {timeout:g}초를 초과했습니다.",
+            )
         if check and result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Command failed")
         return result
 
-    def git(self, *args: str, check: bool = False) -> subprocess.CompletedProcess:
-        return self.run(["git", *args], check=check)
+    def git(
+        self,
+        *args: str,
+        check: bool = False,
+        timeout: float | None = None,
+    ) -> subprocess.CompletedProcess:
+        return self.run(["git", *args], check=check, timeout=timeout)
 
     def fetch(self) -> subprocess.CompletedProcess:
-        return self.git("fetch", "origin")
+        return self.git("fetch", "origin", timeout=60)
 
     def current_branch(self) -> str:
         result = self.git("branch", "--show-current")
@@ -183,7 +201,23 @@ class GitService:
         return str(executable)
 
     def run_tests(self) -> subprocess.CompletedProcess:
-        return self.run([self.console_python_executable(), "-m", "pytest"])
+        base_temp = (
+            Path(tempfile.gettempdir())
+            / "DrawingRequestRevisionTool"
+            / "pytest"
+            / f"run-{os.getpid()}"
+        )
+        return self.run(
+            [
+                self.console_python_executable(),
+                "-m",
+                "pytest",
+                "-p",
+                "no:cacheprovider",
+                "--basetemp",
+                str(base_temp),
+            ]
+        )
 
     def install_requirements(self) -> subprocess.CompletedProcess:
         return self.run([self.console_python_executable(), "-m", "pip", "install", "-r", "requirements.txt"])

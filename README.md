@@ -8,6 +8,17 @@ On the first run, the launcher automatically creates `.venv`, installs packages 
 
 If Python 3 is not installed, the launcher shows a message with the Python download link. After installing Python 3, run `launch_app.bat` again.
 
+## 새 컴퓨터용 단일 실행 파일
+
+일반 사용자는 `DrawingRequestRevisionTool.exe` 파일 하나만 다운로드하여 더블클릭하면 됩니다.
+Python, pip, PySide6를 별도로 설치할 필요가 없으며 인터넷 연결 없이 실행됩니다.
+
+개발자가 새 EXE를 만들 때는 Windows에서 `build_standalone.bat`를 더블클릭합니다.
+완성된 파일은 `release\DrawingRequestRevisionTool.exe`에 생성됩니다.
+
+GitHub에서는 `Build Windows EXE` Actions를 수동 실행하거나 `v1.0.0` 같은 태그를 Push하면
+테스트 후 EXE Artifact가 생성됩니다. 태그 빌드의 EXE는 GitHub Release에도 자동 첨부됩니다.
+
 ## Team Sync Manager 사용법
 
 Team Sync 기능은 성윤의 `sungyoon-codex` 브랜치와 학석의 `hakseok-claude` 브랜치를 안전하게 관리하고, 검증이 끝난 변경만 GitHub `main`에 통합합니다. 도면 PDF, Excel, CSV, `.pfcproj`, `.env`, 가상환경은 Commit 대상에서 차단됩니다.

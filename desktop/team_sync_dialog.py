@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QObject, QThread, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -30,6 +32,26 @@ from src.team_sync.profile import (
 )
 from src.team_sync.result_models import SyncResult
 from src.team_sync.sync_service import SyncService
+
+
+class SyncActionWorker(QObject):
+    finished = Signal(object)
+
+    def __init__(self, action: Callable[[], SyncResult]):
+        super().__init__()
+        self.action = action
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = self.action()
+        except Exception as exc:
+            result = SyncResult(
+                False,
+                "Team Sync 작업 중 예상하지 못한 오류가 발생했습니다.",
+                [f"{type(exc).__name__}: {exc}"],
+            )
+        self.finished.emit(result)
 
 
 class ProfileDialog(QDialog):
@@ -95,6 +117,8 @@ class TeamSyncDialog(QDialog):
         super().__init__(parent)
         self.project_root = Path(project_root)
         self.service = SyncService(self.project_root)
+        self.sync_thread: QThread | None = None
+        self.sync_worker: SyncActionWorker | None = None
         self.setWindowTitle("Team Sync Manager")
         self.resize(760, 620)
 
@@ -131,32 +155,90 @@ class TeamSyncDialog(QDialog):
             ("통합 상태 확인", self.refresh_remote_status),
             ("GitHub 저장소 열기", self.open_repository),
         ]
+        self.action_buttons: list[QPushButton] = []
         for index, (label, callback) in enumerate(actions):
             button = QPushButton(label)
             button.clicked.connect(callback)
             button_grid.addWidget(button, index // 2, index % 2)
+            self.action_buttons.append(button)
 
-        settings_button = QPushButton("개발자 프로필 및 자동 동기화 설정")
-        settings_button.clicked.connect(self.change_profile)
+        self.settings_button = QPushButton("개발자 프로필 및 자동 동기화 설정")
+        self.settings_button.clicked.connect(self.change_profile)
 
         self.output = QTextEdit()
         self.output.setReadOnly(True)
         self.output.setPlaceholderText("동기화 작업 결과와 확인할 내용이 표시됩니다.")
 
+        self.progress_label = QLabel()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setTextVisible(False)
+        self.progress_label.hide()
+        self.progress_bar.hide()
+
         close_row = QHBoxLayout()
         close_row.addStretch()
-        close_button = QPushButton("닫기")
-        close_button.clicked.connect(self.accept)
-        close_row.addWidget(close_button)
+        self.close_button = QPushButton("닫기")
+        self.close_button.clicked.connect(self.accept)
+        close_row.addWidget(self.close_button)
 
         layout = QVBoxLayout(self)
         layout.addWidget(info_group)
         layout.addLayout(button_grid)
-        layout.addWidget(settings_button)
+        layout.addWidget(self.settings_button)
+        layout.addWidget(self.progress_label)
+        layout.addWidget(self.progress_bar)
         layout.addWidget(QLabel("작업 결과"))
         layout.addWidget(self.output, 1)
         layout.addLayout(close_row)
         self.refresh_status()
+
+    def _set_busy(self, busy: bool, label: str = "") -> None:
+        for button in self.action_buttons:
+            button.setEnabled(not busy)
+        self.settings_button.setEnabled(not busy)
+        self.close_button.setEnabled(not busy)
+        self.progress_label.setVisible(busy)
+        self.progress_bar.setVisible(busy)
+        if busy:
+            self.progress_label.setText(f"{label} 진행 중...")
+
+    def _run_action(self, label: str, action: Callable[[], SyncResult]) -> None:
+        if self.sync_thread is not None and self.sync_thread.isRunning():
+            return
+        self.output.setPlainText(
+            f"{label} 진행 중...\n\n"
+            "GitHub 응답을 기다리고 있습니다. 네트워크 상태에 따라 잠시 걸릴 수 있습니다."
+        )
+        self._set_busy(True, label)
+
+        self.sync_thread = QThread(self)
+        self.sync_worker = SyncActionWorker(action)
+        self.sync_worker.moveToThread(self.sync_thread)
+        self.sync_thread.started.connect(self.sync_worker.run)
+        self.sync_worker.finished.connect(self._action_finished)
+        self.sync_worker.finished.connect(self.sync_thread.quit)
+        self.sync_worker.finished.connect(self.sync_worker.deleteLater)
+        self.sync_thread.finished.connect(self._thread_finished)
+        self.sync_thread.finished.connect(self.sync_thread.deleteLater)
+        self.sync_thread.start()
+
+    @Slot(object)
+    def _action_finished(self, result: SyncResult) -> None:
+        self._set_busy(False)
+        self._show_result(result)
+
+    @Slot()
+    def _thread_finished(self) -> None:
+        self.sync_worker = None
+        self.sync_thread = None
+
+    def closeEvent(self, event) -> None:
+        if self.sync_thread is not None and self.sync_thread.isRunning():
+            event.ignore()
+            self.output.append("\n\n진행 중인 Team Sync 작업이 끝난 뒤 창을 닫을 수 있습니다.")
+            return
+        super().closeEvent(event)
 
     def _show_result(self, result: SyncResult) -> None:
         lines = [result.message]
@@ -189,15 +271,19 @@ class TeamSyncDialog(QDialog):
         self.value_labels["last_sync"].setText(status.last_sync_at or "기록 없음")
 
     def check_main(self) -> None:
-        self._show_result(self.service.check_main_updates())
+        self._run_action("최신 Main 확인", self.service.check_main_updates)
 
     def apply_main(self) -> None:
-        self._show_result(self.service.apply_main_changes())
+        self._run_action("Main 변경사항 반영", self.service.apply_main_changes)
 
     def upload_work(self) -> None:
         message, ok = QInputDialog.getText(self, "내 작업 업로드", "Commit 메시지를 입력하세요.")
         if ok and message.strip():
-            self._show_result(self.service.upload_my_work(message.strip()))
+            commit_message = message.strip()
+            self._run_action(
+                "내 작업 업로드",
+                lambda: self.service.upload_my_work(commit_message),
+            )
 
     def integrate_work(self) -> None:
         answer = QMessageBox.question(
@@ -209,11 +295,10 @@ class TeamSyncDialog(QDialog):
             QMessageBox.No,
         )
         if answer == QMessageBox.Yes:
-            self._show_result(self.service.integrate_my_work())
+            self._run_action("내 작업 Main 통합", self.service.integrate_my_work)
 
     def refresh_remote_status(self) -> None:
-        result = self.service.check_main_updates()
-        self._show_result(result)
+        self._run_action("통합 상태 확인", self.service.check_main_updates)
 
     def open_repository(self) -> None:
         url = self.service.github.repository_url() or self.service.git.remote_url()

@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 .venv/
 venv/
 __pycache__/
@@ -15,6 +15,8 @@ __pycache__/
 build/
 dist/
 *.spec
+release/
+DrawingRequestRevisionTool.exe
 
 # Temporary
 *.log
@@ -42,3 +44,6 @@ credentials/
 
 # Local team sync profile (per PC)
 .team_profile.local.json
+
+# Local portable development runtime
+.runtime/

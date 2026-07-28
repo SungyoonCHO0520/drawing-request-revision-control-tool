@@ -1,0 +1,56 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Run tests
+        run: python -m pytest
+      - name: Build standalone executable
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name DrawingRequestRevisionTool
+          --hidden-import fitz
+          --exclude-module pytest
+          --exclude-module pygments
+          --paths .
+          desktop/app.py
+      - name: Smoke-test executable
+        run: .\dist\DrawingRequestRevisionTool.exe --smoke-test
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DrawingRequestRevisionTool-Windows
+          path: dist/DrawingRequestRevisionTool.exe
+          if-no-files-found: error
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          "dist/DrawingRequestRevisionTool.exe"
+          --generate-notes
+          --title "Drawing Request Revision Tool ${{ github.ref_name }}"

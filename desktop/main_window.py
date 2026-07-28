@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -226,6 +227,8 @@ class MainWindow(QMainWindow):
         return button
 
     def _build_team_sync_menu(self) -> None:
+        if os.environ.get("PFC_STANDALONE") == "1":
+            return
         menu = self.menuBar().addMenu("Team Sync")
         open_action = QAction("Team Sync Manager", self)
         open_action.triggered.connect(self.open_team_sync_manager)

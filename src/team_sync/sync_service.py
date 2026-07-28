@@ -34,11 +34,21 @@ class SyncService:
     def profile(self) -> TeamProfile | None:
         return load_profile(self.project_root)
 
-    def _save_sync(self, profile: TeamProfile, main_commit: str = "") -> None:
+    def _save_profile_safely(self, profile: TeamProfile) -> list[str]:
+        try:
+            save_profile(profile, self.project_root)
+            return []
+        except OSError as exc:
+            return [
+                "Team Sync 작업은 완료됐지만 이 PC에 동기화 확인 기록을 저장하지 못했습니다. "
+                f"({type(exc).__name__}: {exc})"
+            ]
+
+    def _save_sync(self, profile: TeamProfile, main_commit: str = "") -> list[str]:
         if main_commit:
             profile.last_main_commit = main_commit
         profile.last_sync_at = _now_text()
-        save_profile(profile, self.project_root)
+        return self._save_profile_safely(profile)
 
     def status(self, fetch: bool = False) -> SyncStatus:
         profile = self.profile()
@@ -96,8 +106,14 @@ class SyncService:
             if installed.returncode != 0:
                 return SyncResult(False, "Main은 반영됐지만 requirements 설치에 실패했습니다.", [installed.stderr.strip()])
         main_commit = self.git.rev_parse("origin/main")
-        self._save_sync(profile, main_commit)
-        return SyncResult(True, "최신 Main 내용을 개인 브랜치에 안전하게 반영했습니다.", branch=profile.branch_name, commit_id=new_head)
+        save_details = self._save_sync(profile, main_commit)
+        return SyncResult(
+            True,
+            "최신 Main 내용을 개인 브랜치에 안전하게 반영했습니다.",
+            details=save_details,
+            branch=profile.branch_name,
+            commit_id=new_head,
+        )
 
     def check_main_updates(self, apply_if_enabled: bool = False) -> SyncResult:
         profile = self.profile()
@@ -109,12 +125,22 @@ class SyncService:
         main_commit = self.git.rev_parse("origin/main")
         has_update = bool(main_commit and not self.git.is_ancestor("origin/main", "HEAD"))
         profile.last_main_commit = main_commit
-        save_profile(profile, self.project_root)
+        save_details = self._save_profile_safely(profile)
         if not has_update:
-            return SyncResult(True, "현재 개인 브랜치에 최신 Main이 반영되어 있습니다.", commit_id=main_commit)
+            return SyncResult(
+                True,
+                "현재 개인 브랜치에 최신 Main이 반영되어 있습니다.",
+                details=save_details,
+                commit_id=main_commit,
+            )
         if apply_if_enabled and profile.auto_merge:
             return self.apply_main_changes()
-        return SyncResult(True, "새로운 Main 업데이트가 있습니다.", commit_id=main_commit)
+        return SyncResult(
+            True,
+            "새로운 Main 업데이트가 있습니다.",
+            details=save_details,
+            commit_id=main_commit,
+        )
 
     def apply_main_changes(self, run_tests: bool = False) -> SyncResult:
         profile = self.profile()
@@ -143,8 +169,14 @@ class SyncService:
             if tested.returncode != 0:
                 return SyncResult(False, "Main 반영 후 테스트가 실패했습니다.", [tested.stdout[-3000:], tested.stderr[-1000:]])
         main_commit = self.git.rev_parse("origin/main")
-        self._save_sync(profile, main_commit)
-        return SyncResult(True, "Main 변경사항 반영이 완료되었습니다.", branch=profile.branch_name, commit_id=new_head)
+        save_details = self._save_sync(profile, main_commit)
+        return SyncResult(
+            True,
+            "Main 변경사항 반영이 완료되었습니다.",
+            details=save_details,
+            branch=profile.branch_name,
+            commit_id=new_head,
+        )
 
     def upload_my_work(self, commit_message: str) -> SyncResult:
         profile = self.profile()
@@ -277,8 +309,15 @@ class SyncService:
         if repushed.returncode != 0:
             return SyncResult(False, "Main은 통합됐지만 개인 브랜치 재동기화 Push에 실패했습니다.", pull_request_url=pr_url)
         main_commit = self.git.rev_parse("origin/main")
-        self._save_sync(profile, main_commit)
+        save_details = self._save_sync(profile, main_commit)
         message = "내 작업을 Main에 통합하고 개인 브랜치를 최신화했습니다."
         if had_local_changes:
             message = "로컬 작업을 자동 Commit한 뒤 최신 Main과 통합하고 개인 브랜치를 최신화했습니다."
-        return SyncResult(True, message, branch=branch, commit_id=main_commit, pull_request_url=pr_url)
+        return SyncResult(
+            True,
+            message,
+            details=save_details,
+            branch=branch,
+            commit_id=main_commit,
+            pull_request_url=pr_url,
+        )
